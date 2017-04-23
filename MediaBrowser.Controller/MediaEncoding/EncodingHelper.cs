@@ -732,7 +732,7 @@ namespace MediaBrowser.Controller.MediaEncoding
 
             if (string.Equals(videoEncoder, "libx264", StringComparison.OrdinalIgnoreCase))
             {
-                param += " -x264opts:0 subme=0:rc_lookahead=10:me_range=4:me=dia:no_chroma_me:8x8dct=0:partitions=none";
+                param += " -x264opts:0 subme=0:me_range=4:rc_lookahead=10:me=dia:no_chroma_me:8x8dct=0:partitions=none";
             }
 
             if (!string.Equals(videoEncoder, "h264_omx", StringComparison.OrdinalIgnoreCase) &&
@@ -747,11 +747,6 @@ namespace MediaBrowser.Controller.MediaEncoding
 
         public bool CanStreamCopyVideo(EncodingJobInfo state, MediaStream videoStream)
         {
-            if (!videoStream.AllowStreamCopy)
-            {
-                return false;
-            }
-
             var request = state.BaseRequest;
 
             if (!request.AllowVideoStreamCopy)
@@ -897,11 +892,6 @@ namespace MediaBrowser.Controller.MediaEncoding
 
         public bool CanStreamCopyAudio(EncodingJobInfo state, MediaStream audioStream, List<string> supportedAudioCodecs)
         {
-            if (!audioStream.AllowStreamCopy)
-            {
-                return false;
-            }
-
             var request = state.BaseRequest;
 
             if (!request.AllowAudioStreamCopy)
@@ -1735,6 +1725,11 @@ namespace MediaBrowser.Controller.MediaEncoding
 
             if (state.VideoStream != null && !string.IsNullOrWhiteSpace(state.VideoStream.Codec))
             {
+                if (!string.IsNullOrWhiteSpace(encodingOptions.HardwareAccelerationType))
+                {
+                    return "-hwaccel auto";
+                }
+
                 if (string.Equals(encodingOptions.HardwareAccelerationType, "qsv", StringComparison.OrdinalIgnoreCase))
                 {
                     switch (state.MediaSource.VideoStream.Codec.ToLower())
