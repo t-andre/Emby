@@ -268,7 +268,7 @@ namespace Emby.Server.Implementations.Channels
                 return;
             }
 
-            _fileSystem.CreateDirectory(Path.GetDirectoryName(path));
+            _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(path));
 
             _jsonSerializer.SerializeToFile(mediaSources, path);
         }
@@ -1105,7 +1105,7 @@ namespace Emby.Server.Implementations.Channels
         {
             try
             {
-                _fileSystem.CreateDirectory(Path.GetDirectoryName(path));
+                _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(path));
 
                 _jsonSerializer.SerializeToFile(result, path);
             }
@@ -1416,7 +1416,7 @@ namespace Emby.Server.Implementations.Channels
             if (!_refreshedItems.ContainsKey(program.Id))
             {
                 _refreshedItems.TryAdd(program.Id, true);
-                _providerManager.QueueRefresh(program.Id, new MetadataRefreshOptions(_fileSystem));
+                _providerManager.QueueRefresh(program.Id, new MetadataRefreshOptions(_fileSystem), RefreshPriority.Low);
             }
 
         }
