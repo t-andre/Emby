@@ -14,6 +14,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Model.Dlna;
+using MediaBrowser.Model.Extensions;
 
 namespace Emby.Server.Implementations.LiveTv
 {
@@ -78,8 +79,7 @@ namespace Emby.Server.Implementations.LiveTv
             {
                 var hasMediaSources = (IHasMediaSources)item;
 
-                sources = _mediaSourceManager.GetStaticMediaSources(hasMediaSources, false)
-                   .ToList();
+                sources = _mediaSourceManager.GetStaticMediaSources(hasMediaSources, false);
 
                 forceRequireOpening = true;
             }
@@ -103,7 +103,7 @@ namespace Emby.Server.Implementations.LiveTv
                     openKeys.Add(item.GetType().Name);
                     openKeys.Add(item.Id.ToString("N"));
                     openKeys.Add(source.Id ?? string.Empty);
-                    source.OpenToken = string.Join(StreamIdDelimeterString, openKeys.ToArray());
+                    source.OpenToken = string.Join(StreamIdDelimeterString, openKeys.ToArray(openKeys.Count));
                 }
 
                 // Dummy this up so that direct play checks can still run
@@ -118,7 +118,7 @@ namespace Emby.Server.Implementations.LiveTv
             return list;
         }
 
-        public async Task<Tuple<MediaSourceInfo, IDirectStreamProvider>> OpenMediaSource(string openToken, CancellationToken cancellationToken)
+        public async Task<Tuple<MediaSourceInfo, IDirectStreamProvider>> OpenMediaSource(string openToken, bool allowLiveStreamProbe, CancellationToken cancellationToken)
         {
             MediaSourceInfo stream = null;
             const bool isAudio = false;
@@ -140,7 +140,7 @@ namespace Emby.Server.Implementations.LiveTv
 
             try
             {
-                if (!stream.SupportsProbing || stream.MediaStreams.Any(i => i.Index != -1))
+                if (!allowLiveStreamProbe || !stream.SupportsProbing || stream.MediaStreams.Any(i => i.Index != -1))
                 {
                     AddMediaInfo(stream, isAudio, cancellationToken);
                 }

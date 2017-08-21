@@ -11,6 +11,7 @@ using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Serialization;
 using MediaBrowser.Model.Session;
+using MediaBrowser.Model.Extensions;
 
 namespace Emby.Server.Implementations.Devices
 {
@@ -46,7 +47,7 @@ namespace Emby.Server.Implementations.Devices
         public Task SaveDevice(DeviceInfo device)
         {
             var path = Path.Combine(GetDevicePath(device.Id), "device.json");
-            _fileSystem.CreateDirectory(Path.GetDirectoryName(path));
+            _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(path));
 
             lock (_syncLock)
             {
@@ -180,7 +181,7 @@ namespace Emby.Server.Implementations.Devices
         public void AddCameraUpload(string deviceId, LocalFileInfo file)
         {
             var path = Path.Combine(GetDevicePath(deviceId), "camerauploads.json");
-            _fileSystem.CreateDirectory(Path.GetDirectoryName(path));
+            _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(path));
 
             lock (_syncLock)
             {
@@ -199,7 +200,10 @@ namespace Emby.Server.Implementations.Devices
                 }
 
                 history.DeviceId = deviceId;
-                history.FilesUploaded.Add(file);
+
+                var list = history.FilesUploaded.ToList();
+                list.Add(file);
+                history.FilesUploaded = list.ToArray(list.Count);
 
                 _json.SerializeToFile(history, path);
             }

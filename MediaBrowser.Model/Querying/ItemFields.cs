@@ -16,11 +16,6 @@
         AlternateEpisodeNumbers,
 
         /// <summary>
-        /// The awards summary
-        /// </summary>
-        AwardSummary,
-
-        /// <summary>
         /// The can delete
         /// </summary>
         CanDelete,
@@ -68,11 +63,6 @@
         DisplayPreferencesId,
 
         /// <summary>
-        /// The display media type
-        /// </summary>
-        DisplayMediaType,
-
-        /// <summary>
         /// The etag
         /// </summary>
         Etag,
@@ -93,19 +83,9 @@
         HomePageUrl,
 
         /// <summary>
-        /// The fields that the server supports indexing on
-        /// </summary>
-        IndexOptions,
-
-        /// <summary>
         /// The item counts
         /// </summary>
         ItemCounts,
-
-        /// <summary>
-        /// The keywords
-        /// </summary>
-        Keywords,
 
         /// <summary>
         /// The media source count
@@ -159,11 +139,6 @@
         RecursiveItemCount,
 
         /// <summary>
-        /// The season name
-        /// </summary>
-        SeasonName,
-
-        /// <summary>
         /// The settings
         /// </summary>
         Settings,
@@ -172,11 +147,6 @@
         /// The screenshot image tags
         /// </summary>
         ScreenshotImageTags,
-
-        /// <summary>
-        /// The series genres
-        /// </summary>
-        SeriesGenres,
 
         SeriesPrimaryImage,
 
@@ -217,11 +187,6 @@
         Tags,
 
         /// <summary>
-        /// The vote count
-        /// </summary>
-        VoteCount,
-
-        /// <summary>
         /// The trailer url of the item
         /// </summary>
         RemoteTrailers,
@@ -241,6 +206,15 @@
         /// </summary>
         ServiceName,
         ThemeSongIds,
-        ThemeVideoIds
+        ThemeVideoIds,
+        ExternalEtag,
+        PresentationUniqueKey,
+        InheritedParentalRatingValue,
+        ExternalSeriesId,
+        SeriesPresentationUniqueKey,
+        DateLastRefreshed,
+        DateLastSaved,
+        RefreshState,
+        ChannelImage
     }
 }

@@ -46,7 +46,6 @@ namespace MediaBrowser.Model.Configuration
         /// </summary>
         /// <value><c>true</c> if [use HTTPS]; otherwise, <c>false</c>.</value>
         public bool EnableHttps { get; set; }
-        public bool EnableSeriesPresentationUniqueKey { get; set; }
         public bool EnableLocalizedGuids { get; set; }
         public bool EnableNormalizedItemByNameIds { get; set; }
 
@@ -55,6 +54,7 @@ namespace MediaBrowser.Model.Configuration
         /// </summary>
         /// <value>The value pointing to the file system where the ssl certiifcate is located..</value>
         public string CertificatePath { get; set; }
+        public string CertificatePassword { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether this instance is port authorized.
@@ -76,8 +76,6 @@ namespace MediaBrowser.Model.Configuration
         /// <value>The metadata path.</value>
         public string MetadataPath { get; set; }
         public string MetadataNetworkPath { get; set; }
-
-        public string LastVersion { get; set; }
 
         /// <summary>
         /// Gets or sets the display name of the season zero.
@@ -164,7 +162,6 @@ namespace MediaBrowser.Model.Configuration
 
         public bool EnableAutomaticRestart { get; set; }
         public bool SkipDeserializationForBasicTypes { get; set; }
-        public bool SkipDeserializationForAudio { get; set; }
 
         public string ServerName { get; set; }
         public string WanDdns { get; set; }
@@ -189,7 +186,6 @@ namespace MediaBrowser.Model.Configuration
         public bool DisplayCollectionsView { get; set; }
         public string[] LocalNetworkAddresses { get; set; }
         public string[] CodecsUsed { get; set; }
-        public string[] Migrations { get; set; }
         public bool EnableChannelView { get; set; }
         public bool EnableExternalContentInSuggestions { get; set; }
 
@@ -205,7 +201,6 @@ namespace MediaBrowser.Model.Configuration
         {
             LocalNetworkAddresses = new string[] { };
             CodecsUsed = new string[] { };
-            Migrations = new string[] { };
             ImageExtractionTimeoutMs = 0;
             EnableLocalizedGuids = true;
             PathSubstitutions = new PathSubstitution[] { };
@@ -353,7 +348,9 @@ namespace MediaBrowser.Model.Configuration
                             Limit = 1,
                             Type = ImageType.Logo
                         }
-                    }
+                    },
+
+                    DisabledImageFetchers = new [] {"FanArt"}
                 },
 
                 new MetadataOptions(1, 1280)
@@ -543,7 +540,8 @@ namespace MediaBrowser.Model.Configuration
                             Type = ImageType.Thumb
                         }
                     },
-                    DisabledMetadataFetchers = new []{ "TheMovieDb" }
+                    DisabledMetadataFetchers = new []{ "TheMovieDb" },
+                    DisabledImageFetchers = new [] { "FanArt" }
                 },
 
                 new MetadataOptions(0, 1280)

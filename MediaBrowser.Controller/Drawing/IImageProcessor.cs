@@ -33,6 +33,8 @@ namespace MediaBrowser.Controller.Drawing
         /// <returns>ImageSize.</returns>
         ImageSize GetImageSize(ItemImageInfo info);
 
+        ImageSize GetImageSize(ItemImageInfo info, bool allowSlowMethods);
+
         /// <summary>
         /// Gets the size of the image.
         /// </summary>
@@ -52,7 +54,7 @@ namespace MediaBrowser.Controller.Drawing
         /// <param name="item">The item.</param>
         /// <param name="imageType">Type of the image.</param>
         /// <returns>IEnumerable{IImageEnhancer}.</returns>
-        IEnumerable<IImageEnhancer> GetSupportedEnhancers(IHasImages item, ImageType imageType);
+        IEnumerable<IImageEnhancer> GetSupportedEnhancers(IHasMetadata item, ImageType imageType);
 
         /// <summary>
         /// Gets the image cache tag.
@@ -60,7 +62,7 @@ namespace MediaBrowser.Controller.Drawing
         /// <param name="item">The item.</param>
         /// <param name="image">The image.</param>
         /// <returns>Guid.</returns>
-        string GetImageCacheTag(IHasImages item, ItemImageInfo image);
+        string GetImageCacheTag(IHasMetadata item, ItemImageInfo image);
 
         /// <summary>
         /// Gets the image cache tag.
@@ -69,7 +71,7 @@ namespace MediaBrowser.Controller.Drawing
         /// <param name="image">The image.</param>
         /// <param name="imageEnhancers">The image enhancers.</param>
         /// <returns>Guid.</returns>
-        string GetImageCacheTag(IHasImages item, ItemImageInfo image, List<IImageEnhancer> imageEnhancers);
+        string GetImageCacheTag(IHasMetadata item, ItemImageInfo image, List<IImageEnhancer> imageEnhancers);
 
         /// <summary>
         /// Processes the image.
@@ -93,7 +95,7 @@ namespace MediaBrowser.Controller.Drawing
         /// <param name="imageType">Type of the image.</param>
         /// <param name="imageIndex">Index of the image.</param>
         /// <returns>Task{System.String}.</returns>
-        Task<string> GetEnhancedImage(IHasImages item, ImageType imageType, int imageIndex);
+        Task<string> GetEnhancedImage(IHasMetadata item, ImageType imageType, int imageIndex);
 
         /// <summary>
         /// Gets the supported image output formats.
@@ -105,12 +107,16 @@ namespace MediaBrowser.Controller.Drawing
         /// Creates the image collage.
         /// </summary>
         /// <param name="options">The options.</param>
-        Task CreateImageCollage(ImageCollageOptions options);
+        void CreateImageCollage(ImageCollageOptions options);
 
         /// <summary>
         /// Gets a value indicating whether [supports image collage creation].
         /// </summary>
         /// <value><c>true</c> if [supports image collage creation]; otherwise, <c>false</c>.</value>
         bool SupportsImageCollageCreation { get; }
+
+        IImageEncoder ImageEncoder { get; set; }
+
+        void SaveImageSize(string path, DateTime imageDateModified, ImageSize size);
     }
 }

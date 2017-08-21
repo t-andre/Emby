@@ -15,6 +15,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Xml;
+using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Xml;
 
@@ -106,7 +107,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
         /// <param name="metadataFile">The metadata file.</param>
         /// <param name="settings">The settings.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
-        private void Fetch(MetadataResult<T> item, string metadataFile, XmlReaderSettings settings, CancellationToken cancellationToken)
+        protected virtual void Fetch(MetadataResult<T> item, string metadataFile, XmlReaderSettings settings, CancellationToken cancellationToken)
         {
             if (!SupportsUrlAfterClosingXmlTag)
             {
@@ -227,7 +228,12 @@ namespace MediaBrowser.XbmcMetadata.Parsers
             }
         }
 
-        private void ParseProviderLinks(T item, string xml)
+        protected virtual string MovieDbParserSearchString
+        {
+            get { return "themoviedb.org/movie/"; }
+        }
+
+        protected void ParseProviderLinks(T item, string xml)
         {
             //Look for a match for the Regex pattern "tt" followed by 7 digits
             Match m = Regex.Match(xml, @"tt([0-9]{7})", RegexOptions.IgnoreCase);
@@ -238,7 +244,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
 
             // Support Tmdb
             // http://www.themoviedb.org/movie/36557
-            var srch = "themoviedb.org/movie/";
+            var srch = MovieDbParserSearchString;
             var index = xml.IndexOf(srch, StringComparison.OrdinalIgnoreCase);
 
             if (index != -1)
@@ -247,7 +253,24 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                 int value;
                 if (!string.IsNullOrWhiteSpace(tmdbId) && int.TryParse(tmdbId, NumberStyles.Any, CultureInfo.InvariantCulture, out value))
                 {
-                    item.SetProviderId(MetadataProviders.Tmdb, tmdbId);
+                    item.SetProviderId(MetadataProviders.Tmdb, value.ToString(_usCulture));
+                }
+            }
+
+            if (item is Series)
+            {
+                srch = "thetvdb.com/?tab=series&id=";
+
+                index = xml.IndexOf(srch, StringComparison.OrdinalIgnoreCase);
+
+                if (index != -1)
+                {
+                    var tvdbId = xml.Substring(index + srch.Length).TrimEnd('/');
+                    int value;
+                    if (!string.IsNullOrWhiteSpace(tvdbId) && int.TryParse(tvdbId, NumberStyles.Any, CultureInfo.InvariantCulture, out value))
+                    {
+                        item.SetProviderId(MetadataProviders.Tvdb, value.ToString(_usCulture));
+                    }
                 }
             }
         }
@@ -293,10 +316,6 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         break;
                     }
 
-                case "type":
-                    item.DisplayMediaType = reader.ReadElementContentAsString();
-                    break;
-
                 case "title":
                 case "localtitle":
                     item.Name = reader.ReadElementContentAsString();
@@ -312,21 +331,6 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                             if (float.TryParse(text, NumberStyles.Any, _usCulture, out value))
                             {
                                 item.CriticRating = value;
-                            }
-                        }
-
-                        break;
-                    }
-
-                case "awardsummary":
-                    {
-                        var text = reader.ReadElementContentAsString();
-                        var hasAwards = item as IHasAwards;
-                        if (hasAwards != null)
-                        {
-                            if (!string.IsNullOrWhiteSpace(text))
-                            {
-                                hasAwards.AwardSummary = text;
                             }
                         }
 
@@ -390,13 +394,11 @@ namespace MediaBrowser.XbmcMetadata.Parsers
 
                 case "lockedfields":
                     {
-                        var fields = new List<MetadataFields>();
-
                         var val = reader.ReadElementContentAsString();
 
                         if (!string.IsNullOrWhiteSpace(val))
                         {
-                            var list = val.Split('|').Select(i =>
+                            item.LockedFields = val.Split('|').Select(i =>
                             {
                                 MetadataFields field;
 
@@ -407,12 +409,8 @@ namespace MediaBrowser.XbmcMetadata.Parsers
 
                                 return null;
 
-                            }).Where(i => i.HasValue).Select(i => i.Value);
-
-                            fields.AddRange(list);
+                            }).Where(i => i.HasValue).Select(i => i.Value).ToArray();
                         }
-
-                        item.LockedFields = fields;
 
                         break;
                     }
@@ -434,9 +432,10 @@ namespace MediaBrowser.XbmcMetadata.Parsers
 
                         if (!string.IsNullOrWhiteSpace(val))
                         {
-                            item.ProductionLocations.AddRange(val.Split('/')
+                            item.ProductionLocations = val.Split('/')
                                 .Select(i => i.Trim())
-                                .Where(i => !string.IsNullOrWhiteSpace(i)));
+                                .Where(i => !string.IsNullOrWhiteSpace(i))
+                                .ToArray();
                         }
                         break;
                     }
@@ -600,7 +599,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                             {
                                 val = val.Replace("plugin://plugin.video.youtube/?action=play_video&videoid=", "https://www.youtube.com/watch?v=", StringComparison.OrdinalIgnoreCase);
 
-                                hasTrailer.AddTrailerUrl(val, false);
+                                hasTrailer.AddTrailerUrl(val);
                             }
                         }
                         break;
@@ -696,21 +695,6 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         break;
                     }
 
-                case "votes":
-                    {
-                        var val = reader.ReadElementContentAsString();
-                        if (!string.IsNullOrWhiteSpace(val))
-                        {
-                            int num;
-
-                            if (int.TryParse(val, NumberStyles.Integer, _usCulture, out num))
-                            {
-                                item.VoteCount = num;
-                            }
-                        }
-                        break;
-                    }
-
                 case "genre":
                     {
                         var val = reader.ReadElementContentAsString();
@@ -736,17 +720,6 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         if (!string.IsNullOrWhiteSpace(val))
                         {
                             item.AddTag(val);
-                        }
-                        break;
-                    }
-
-                case "plotkeyword":
-                    {
-                        var val = reader.ReadElementContentAsString();
-
-                        if (!string.IsNullOrWhiteSpace(val))
-                        {
-                            item.AddKeyword(val);
                         }
                         break;
                     }
@@ -943,17 +916,6 @@ namespace MediaBrowser.XbmcMetadata.Parsers
                         case "name":
                             name = reader.ReadElementContentAsString() ?? string.Empty;
                             break;
-
-                        case "type":
-                            {
-                                var val = reader.ReadElementContentAsString();
-
-                                if (!string.IsNullOrWhiteSpace(val))
-                                {
-                                    type = val;
-                                }
-                                break;
-                            }
 
                         case "role":
                             {

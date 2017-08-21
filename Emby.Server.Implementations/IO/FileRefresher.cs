@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Common.Events;
-using MediaBrowser.Common.IO;
+using MediaBrowser.Common.Progress;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.IO;
@@ -34,8 +34,9 @@ namespace Emby.Server.Implementations.IO
 
         public event EventHandler<EventArgs> Completed;
         private readonly IEnvironmentInfo _environmentInfo;
+        private readonly ILibraryManager _libraryManager;
 
-        public FileRefresher(string path, IFileSystem fileSystem, IServerConfigurationManager configurationManager, ILibraryManager libraryManager, ITaskManager taskManager, ILogger logger, ITimerFactory timerFactory, IEnvironmentInfo environmentInfo)
+        public FileRefresher(string path, IFileSystem fileSystem, IServerConfigurationManager configurationManager, ILibraryManager libraryManager, ITaskManager taskManager, ILogger logger, ITimerFactory timerFactory, IEnvironmentInfo environmentInfo, ILibraryManager libraryManager1)
         {
             logger.Debug("New file refresher created for {0}", path);
             Path = path;
@@ -47,6 +48,7 @@ namespace Emby.Server.Implementations.IO
             Logger = logger;
             _timerFactory = timerFactory;
             _environmentInfo = environmentInfo;
+            _libraryManager = libraryManager1;
             AddPath(path);
         }
 
@@ -119,21 +121,13 @@ namespace Emby.Server.Implementations.IO
             RestartTimer();
         }
 
-        private async void OnTimerCallback(object state)
+        private void OnTimerCallback(object state)
         {
             List<string> paths;
 
             lock (_timerLock)
             {
                 paths = _affectedPaths.ToList();
-            }
-
-            // Extend the timer as long as any of the paths are still being written to.
-            if (paths.Any(IsFileLocked))
-            {
-                Logger.Info("Timer extended.");
-                RestartTimer();
-                return;
             }
 
             Logger.Debug("Timer stopped.");
@@ -143,7 +137,7 @@ namespace Emby.Server.Implementations.IO
 
             try
             {
-                await ProcessPathChanges(paths.ToList()).ConfigureAwait(false);
+                ProcessPathChanges(paths.ToList());
             }
             catch (Exception ex)
             {
@@ -151,7 +145,7 @@ namespace Emby.Server.Implementations.IO
             }
         }
 
-        private async Task ProcessPathChanges(List<string> paths)
+        private void ProcessPathChanges(List<string> paths)
         {
             var itemsToRefresh = paths
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -168,7 +162,7 @@ namespace Emby.Server.Implementations.IO
             // If the root folder changed, run the library task so the user can see it
             if (itemsToRefresh.Any(i => i is AggregateFolder))
             {
-                LibraryManager.ValidateMediaLibrary(new Progress<double>(), CancellationToken.None);
+                LibraryManager.ValidateMediaLibrary(new SimpleProgress<double>(), CancellationToken.None);
                 return;
             }
 
@@ -178,7 +172,7 @@ namespace Emby.Server.Implementations.IO
 
                 try
                 {
-                    await item.ChangedExternally().ConfigureAwait(false);
+                    item.ChangedExternally();
                 }
                 catch (IOException ex)
                 {
@@ -225,84 +219,6 @@ namespace Emby.Server.Implementations.IO
             }
 
             return item;
-        }
-
-        private bool IsFileLocked(string path)
-        {
-            if (_environmentInfo.OperatingSystem != OperatingSystem.Windows)
-            {
-                // Causing lockups on linux
-                return false;
-            }
-
-            try
-            {
-                var data = _fileSystem.GetFileSystemInfo(path);
-
-                if (!data.Exists
-                    || data.IsDirectory
-
-                    // Opening a writable stream will fail with readonly files
-                    || data.IsReadOnly)
-                {
-                    return false;
-                }
-            }
-            catch (IOException)
-            {
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Logger.ErrorException("Error getting file system info for: {0}", ex, path);
-                return false;
-            }
-
-            // In order to determine if the file is being written to, we have to request write access
-            // But if the server only has readonly access, this is going to cause this entire algorithm to fail
-            // So we'll take a best guess about our access level
-            //var requestedFileAccess = ConfigurationManager.Configuration.SaveLocalMeta
-            //    ? FileAccessMode.ReadWrite
-            //    : FileAccessMode.Read;
-
-            var requestedFileAccess = FileAccessMode.Read;
-            try
-            {
-                using (_fileSystem.GetFileStream(path, FileOpenMode.Open, requestedFileAccess, FileShareMode.ReadWrite))
-                {
-                    //file is not locked
-                    return false;
-                }
-            }
-            //catch (DirectoryNotFoundException)
-            //{
-            //    // File may have been deleted
-            //    return false;
-            //}
-            catch (FileNotFoundException)
-            {
-                // File may have been deleted
-                return false;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                Logger.Debug("No write permission for: {0}.", path);
-                return false;
-            }
-            catch (IOException)
-            {
-                //the file is unavailable because it is:
-                //still being written to
-                //or being processed by another thread
-                //or does not exist (has already been processed)
-                Logger.Debug("{0} is locked.", path);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Logger.ErrorException("Error determining if file is locked: {0}", ex, path);
-                return false;
-            }
         }
 
         private void DisposeTimer()

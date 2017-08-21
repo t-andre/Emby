@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Controller.MediaEncoding;
@@ -62,7 +62,7 @@ namespace MediaBrowser.Api
 
     [Route("/System/Configuration/MetadataPlugins", "GET", Summary = "Gets all available metadata plugins")]
     [Authenticated(Roles = "Admin")]
-    public class GetMetadataPlugins : IReturn<List<MetadataPluginSummary>>
+    public class GetMetadataPlugins : IReturn<MetadataPluginSummary[]>
     {
 
     }
@@ -113,8 +113,7 @@ namespace MediaBrowser.Api
 
         public void Post(UpdateMediaEncoderPath request)
         {
-            var task = _mediaEncoder.UpdateEncoderPath(request.Path, request.PathType);
-            Task.WaitAll(task);
+            _mediaEncoder.UpdateEncoderPath(request.Path, request.PathType);
         }
 
         /// <summary>
@@ -171,7 +170,7 @@ namespace MediaBrowser.Api
 
         public object Get(GetMetadataPlugins request)
         {
-            return ToOptimizedSerializedResultUsingCache(_providerManager.GetAllMetadataPlugins().ToList());
+            return ToOptimizedSerializedResultUsingCache(_providerManager.GetAllMetadataPlugins());
         }
     }
 }

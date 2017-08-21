@@ -18,6 +18,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using MediaBrowser.Model.Globalization;
+using MediaBrowser.Model.Extensions;
 
 namespace Emby.Server.Implementations.Activity
 {
@@ -123,7 +124,7 @@ namespace Emby.Server.Implementations.Activity
                 return;
             }
 
-            if (item.IsThemeMedia)
+            if (e.Item != null && e.Item.IsThemeMedia)
             {
                 // Don't report theme song or local trailer playback
                 return;
@@ -155,7 +156,7 @@ namespace Emby.Server.Implementations.Activity
                 return;
             }
 
-            if (item.IsThemeMedia)
+            if (e.Item != null && e.Item.IsThemeMedia)
             {
                 // Don't report theme song or local trailer playback
                 return;
@@ -436,7 +437,7 @@ namespace Emby.Server.Implementations.Activity
                 {
                     Name = string.Format(_localization.GetLocalizedString("ScheduledTaskFailedWithName"), task.Name),
                     Type = "ScheduledTaskFailed",
-                    Overview = string.Join(Environment.NewLine, vals.ToArray()),
+                    Overview = string.Join(Environment.NewLine, vals.ToArray(vals.Count)),
                     ShortOverview = runningTime,
                     Severity = LogSeverity.Error
                 });

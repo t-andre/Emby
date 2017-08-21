@@ -102,7 +102,7 @@ namespace MediaBrowser.Api.Reports
 						HeaderMetadata.Series,
 						HeaderMetadata.Season,
 						HeaderMetadata.SeasonNumber,
-						HeaderMetadata.DateAdded,
+                        HeaderMetadata.DateAdded,
 						HeaderMetadata.Year,
 						HeaderMetadata.Genres
 					};
@@ -269,10 +269,11 @@ namespace MediaBrowser.Api.Reports
                         HeaderMetadata.ImagePrimary,
                         HeaderMetadata.ImageBackdrop,
                         HeaderMetadata.ImageLogo,
-						HeaderMetadata.Name,
+                        HeaderMetadata.Name,
 						HeaderMetadata.EpisodeSeries,
 						HeaderMetadata.Season,
-						HeaderMetadata.DateAdded,
+                        HeaderMetadata.EpisodeNumber,
+                        HeaderMetadata.DateAdded,
 						HeaderMetadata.ReleaseDate,
 						HeaderMetadata.Year,
 						HeaderMetadata.Genres,
@@ -450,8 +451,14 @@ namespace MediaBrowser.Api.Reports
                     internalHeader = HeaderMetadata.Season;
                     break;
 
+                case HeaderMetadata.EpisodeNumber:
+                    option.Column = (i, r) => this.GetObject<BaseItem, string>(i, (x) => x.IndexNumber == null ? "" : x.IndexNumber.ToString());
+                    //option.Header.SortField = "IndexNumber";
+                    //option.Header.HeaderFieldType = ReportFieldType.Int;
+                    break;
+
                 case HeaderMetadata.Network:
-                    option.Column = (i, r) => this.GetListAsString(i.Studios);
+                    option.Column = (i, r) => this.GetListAsString(i.Studios.ToList());
                     option.ItemID = (i) => this.GetStudioID(i.Studios.FirstOrDefault());
                     option.Header.ItemViewType = ItemViewType.ItemByNameDetails;
                     option.Header.SortField = "Studio,SortName";
@@ -506,7 +513,7 @@ namespace MediaBrowser.Api.Reports
                     internalHeader = HeaderMetadata.AlbumArtist;
                     break;
                 case HeaderMetadata.AudioAlbumArtist:
-                    option.Column = (i, r) => this.GetListAsString(this.GetObject<Audio, List<string>>(i, (x) => x.AlbumArtists));
+                    option.Column = (i, r) => this.GetListAsString(this.GetObject<Audio, List<string>>(i, (x) => x.AlbumArtists.ToList()));
                     option.Header.SortField = "AlbumArtist,Album,SortName";
                     internalHeader = HeaderMetadata.AlbumArtist;
                     break;
@@ -606,7 +613,7 @@ namespace MediaBrowser.Api.Reports
                 HasImageTagsPrimary = item.ImageInfos != null && item.ImageInfos.Count(n => n.Type == ImageType.Primary) > 0,
                 HasImageTagsBackdrop = item.ImageInfos != null && item.ImageInfos.Count(n => n.Type == ImageType.Backdrop) > 0,
                 HasImageTagsLogo = item.ImageInfos != null && item.ImageInfos.Count(n => n.Type == ImageType.Logo) > 0,
-                HasSpecials = hasSpecialFeatures != null ? hasSpecialFeatures.SpecialFeatureIds.Count > 0 : false,
+                HasSpecials = hasSpecialFeatures != null ? hasSpecialFeatures.SpecialFeatureIds.Length > 0 : false,
                 HasSubtitles = video != null ? video.HasSubtitles : false,
                 RowType = ReportHelper.GetRowType(item.GetClientTypeName())
             };

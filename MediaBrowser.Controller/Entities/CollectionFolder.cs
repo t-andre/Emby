@@ -7,9 +7,10 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Model.Configuration;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Extensions;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Serialization;
@@ -31,16 +32,16 @@ namespace MediaBrowser.Controller.Entities
         }
 
         [IgnoreDataMember]
-        protected override bool SupportsShortcutChildren
+        public override bool SupportsPlayedStatus
         {
             get
             {
-                return true;
+                return false;
             }
         }
 
         [IgnoreDataMember]
-        public override bool SupportsPlayedStatus
+        public override bool SupportsInheritedParentImages
         {
             get
             {
@@ -155,9 +156,9 @@ namespace MediaBrowser.Controller.Entities
         public List<string> PhysicalLocationsList { get; set; }
         public List<Guid> PhysicalFolderIds { get; set; }
 
-        protected override IEnumerable<FileSystemMetadata> GetFileSystemChildren(IDirectoryService directoryService)
+        protected override FileSystemMetadata[] GetFileSystemChildren(IDirectoryService directoryService)
         {
-            return CreateResolveArgs(directoryService, true).FileSystemChildren;
+            return CreateResolveArgs(directoryService, true).FileSystemChildren.ToArray();
         }
 
         private bool _requiresRefresh;
@@ -199,6 +200,30 @@ namespace MediaBrowser.Controller.Entities
             return changed;
         }
 
+        public override double? GetRefreshProgress()
+        {
+            var folders = GetPhysicalFolders(true).ToList();
+            double totalProgresses = 0;
+            var foldersWithProgress = 0;
+
+            foreach (var folder in folders)
+            {
+                var progress = ProviderManager.GetRefreshProgress(folder.Id);
+                if (progress.HasValue)
+                {
+                    totalProgresses += progress.Value;
+                    foldersWithProgress++;
+                }
+            }
+
+            if (foldersWithProgress == 0)
+            {
+                return null;
+            }
+
+            return (totalProgresses / foldersWithProgress);
+        }
+
         protected override bool RefreshLinkedChildren(IEnumerable<FileSystemMetadata> fileSystemChildren)
         {
             return RefreshLinkedChildrenInternal(true);
@@ -215,7 +240,7 @@ namespace MediaBrowser.Controller.Entities
 
             var changed = !linkedChildren.SequenceEqual(LinkedChildren, new LinkedChildComparer(FileSystem));
 
-            LinkedChildren = linkedChildren;
+            LinkedChildren = linkedChildren.ToArray(linkedChildren.Count);
 
             var folderIds = PhysicalFolderIds.ToList();
             var newFolderIds = physicalFolders.Select(i => i.Id).ToList();
@@ -267,18 +292,16 @@ namespace MediaBrowser.Controller.Entities
                 // When resolving the root, we need it's grandchildren (children of user views)
                 var flattenFolderDepth = isPhysicalRoot ? 2 : 0;
 
-                var fileSystemDictionary = FileData.GetFilteredFileSystemEntries(directoryService, args.Path, FileSystem, Logger, args, flattenFolderDepth: flattenFolderDepth, resolveShortcuts: isPhysicalRoot || args.IsVf);
+                var files = FileData.GetFilteredFileSystemEntries(directoryService, args.Path, FileSystem, Logger, args, flattenFolderDepth: flattenFolderDepth, resolveShortcuts: isPhysicalRoot || args.IsVf);
 
                 // Need to remove subpaths that may have been resolved from shortcuts
                 // Example: if \\server\movies exists, then strip out \\server\movies\action
                 if (isPhysicalRoot)
                 {
-                    var paths = LibraryManager.NormalizeRootPathList(fileSystemDictionary.Values);
-
-                    fileSystemDictionary = paths.ToDictionary(i => i.FullName);
+                    files = LibraryManager.NormalizeRootPathList(files).ToArray();
                 }
 
-                args.FileSystemDictionary = fileSystemDictionary;
+                args.FileSystemChildren = files;
             }
 
             _requiresRefresh = _requiresRefresh || !args.PhysicalLocations.SequenceEqual(PhysicalLocations);
@@ -311,14 +334,19 @@ namespace MediaBrowser.Controller.Entities
         /// </summary>
         /// <value>The actual children.</value>
         [IgnoreDataMember]
-        protected override IEnumerable<BaseItem> ActualChildren
+        public override IEnumerable<BaseItem> Children
         {
             get { return GetActualChildren(); }
         }
 
-        private IEnumerable<BaseItem> GetActualChildren()
+        public IEnumerable<BaseItem> GetActualChildren()
         {
             return GetPhysicalFolders(true).SelectMany(c => c.Children);
+        }
+
+        public IEnumerable<Folder> GetPhysicalFolders()
+        {
+            return GetPhysicalFolders(true);
         }
 
         private IEnumerable<Folder> GetPhysicalFolders(bool enableCache)

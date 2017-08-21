@@ -7,7 +7,7 @@ using MediaBrowser.Model.Logging;
 using MediaBrowser.Providers.Manager;
 using System.Collections.Generic;
 using System.Linq;
-using MediaBrowser.Common.IO;
+
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.IO;
 using MediaBrowser.Model.IO;
@@ -16,7 +16,7 @@ namespace MediaBrowser.Providers.Books
 {
     public class AudioBookMetadataService : MetadataService<AudioBook, SongInfo>
     {
-        protected override void MergeData(MetadataResult<AudioBook> source, MetadataResult<AudioBook> target, List<MetadataFields> lockedFields, bool replaceData, bool mergeMetadataSettings)
+        protected override void MergeData(MetadataResult<AudioBook> source, MetadataResult<AudioBook> target, MetadataFields[] lockedFields, bool replaceData, bool mergeMetadataSettings)
         {
             ProviderUtils.MergeBaseItemData(source, target, lockedFields, replaceData, mergeMetadataSettings);
 

@@ -124,38 +124,18 @@ namespace Emby.Server.Implementations.Data
 
                 if (CacheSize.HasValue)
                 {
-                    queries.Add("PRAGMA cache_size=-" + CacheSize.Value.ToString(CultureInfo.InvariantCulture));
+                    queries.Add("PRAGMA cache_size=" + CacheSize.Value.ToString(CultureInfo.InvariantCulture));
                 }
 
                 if (EnableTempStoreMemory)
                 {
                     queries.Add("PRAGMA temp_store = memory");
                 }
-
-                //var cacheSize = CacheSize;
-                //if (cacheSize.HasValue)
-                //{
-
-                //}
-
-                ////foreach (var query in queries)
-                ////{
-                ////    db.Execute(query);
-                ////}
-
-                //Logger.Info("synchronous: " + db.Query("PRAGMA synchronous").SelectScalarString().First());
-                //Logger.Info("temp_store: " + db.Query("PRAGMA temp_store").SelectScalarString().First());
-
-                /*if (!string.Equals(_defaultWal, "wal", StringComparison.OrdinalIgnoreCase))
+                else
                 {
-                    queries.Add("PRAGMA journal_mode=WAL");
-
-                    using (WriteLock.Write())
-                    {
-                        db.ExecuteAll(string.Join(";", queries.ToArray()));
-                    }
+                    queries.Add("PRAGMA temp_store = file");
                 }
-                else*/
+
                 foreach (var query in queries)
                 {
                     db.Execute(query);
@@ -212,6 +192,13 @@ namespace Emby.Server.Implementations.Data
                 {
                     "pragma default_temp_store = memory",
                     "pragma temp_store = memory"
+                });
+            }
+            else
+            {
+                queries.AddRange(new List<string>
+                {
+                    "pragma temp_store = file"
                 });
             }
 

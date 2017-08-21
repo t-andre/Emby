@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace MediaBrowser.Controller.LiveTv
 {
-    public interface ILiveTvRecording : IHasImages, IHasMediaSources, IHasUserData, IHasStartDate, IHasProgramAttributes
+    public interface ILiveTvRecording : IHasMetadata, IHasMediaSources, IHasUserData, IHasStartDate, IHasProgramAttributes
     {
         string ServiceName { get; set; }
         string ExternalId { get; set; }
@@ -17,8 +17,6 @@ namespace MediaBrowser.Controller.LiveTv
         string MediaType { get; }
 
         string Container { get; }
-
-        long? RunTimeTicks { get; set; }
 
         string GetClientTypeName();
 
@@ -36,8 +34,6 @@ namespace MediaBrowser.Controller.LiveTv
         string TimerId { get; set; }
         RecordingStatus Status { get; set; }
         DateTime? EndDate { get; set; }
-        DateTime DateLastSaved { get; set; }
         DateTime DateCreated { get; set; }
-        DateTime DateModified { get; set; }
     }
 }

@@ -4,6 +4,7 @@ using MediaBrowser.Model.MediaInfo;
 using System.Collections.Generic;
 using System.Linq;
 using MediaBrowser.Model.Serialization;
+using MediaBrowser.Model.Session;
 
 namespace MediaBrowser.Model.Dto
 {
@@ -31,6 +32,7 @@ namespace MediaBrowser.Model.Dto
         public bool ReadAtNativeFramerate { get; set; }
         public bool IgnoreDts { get; set; }
         public bool IgnoreIndex { get; set; }
+        public bool GenPtsInput { get; set; }
         public bool SupportsTranscoding { get; set; }
         public bool SupportsDirectStream { get; set; }
         public bool SupportsDirectPlay { get; set; }
@@ -51,9 +53,8 @@ namespace MediaBrowser.Model.Dto
         public Video3DFormat? Video3DFormat { get; set; }
 
         public List<MediaStream> MediaStreams { get; set; }
-        public List<string> PlayableStreamFileNames { get; set; }
 
-        public List<string> Formats { get; set; }
+        public string[] Formats { get; set; }
 
         public int? Bitrate { get; set; }
 
@@ -68,10 +69,9 @@ namespace MediaBrowser.Model.Dto
 
         public MediaSourceInfo()
         {
-            Formats = new List<string>();
+            Formats = new string[] { };
             MediaStreams = new List<MediaStream>();
             RequiredHttpHeaders = new Dictionary<string, string>();
-            PlayableStreamFileNames = new List<string>();
             SupportsTranscoding = true;
             SupportsDirectStream = true;
             SupportsDirectPlay = true;
@@ -108,6 +108,9 @@ namespace MediaBrowser.Model.Dto
                 Bitrate = bitrate;
             }
         }
+
+        [IgnoreDataMember]
+        public List<TranscodeReason> TranscodeReasons { get; set; }
 
         public int? DefaultAudioStreamIndex { get; set; }
         public int? DefaultSubtitleStreamIndex { get; set; }
@@ -159,7 +162,7 @@ namespace MediaBrowser.Model.Dto
             {
                 foreach (MediaStream i in MediaStreams)
                 {
-                    if (i.Type == MediaStreamType.Video && StringHelper.IndexOfIgnoreCase(i.Codec ?? string.Empty, "jpeg") == -1)
+                    if (i.Type == MediaStreamType.Video)
                     {
                         return i;
                     }
