@@ -60,7 +60,7 @@ namespace Emby.Server.Implementations.LiveTv
 
         private readonly LiveTvDtoService _tvDtoService;
 
-        private readonly List<ILiveTvService> _services = new List<ILiveTvService>();
+        private ILiveTvService[] _services = new ILiveTvService[] { };
 
         private readonly SemaphoreSlim _refreshRecordingsLock = new SemaphoreSlim(1, 1);
 
@@ -124,7 +124,7 @@ namespace Emby.Server.Implementations.LiveTv
         /// <param name="listingProviders">The listing providers.</param>
         public void AddParts(IEnumerable<ILiveTvService> services, IEnumerable<ITunerHost> tunerHosts, IEnumerable<IListingsProvider> listingProviders)
         {
-            _services.AddRange(services);
+            _services = services.ToArray();
             _tunerHosts.AddRange(tunerHosts);
             _listingProviders.AddRange(listingProviders);
 
@@ -558,7 +558,7 @@ namespace Emby.Server.Implementations.LiveTv
 
             if (isNew)
             {
-                await _libraryManager.CreateItem(item, cancellationToken).ConfigureAwait(false);
+                _libraryManager.CreateItem(item, cancellationToken);
             }
             else if (forceUpdate)
             {
@@ -875,7 +875,7 @@ namespace Emby.Server.Implementations.LiveTv
 
             if (isNew)
             {
-                await _libraryManager.CreateItem(item, cancellationToken).ConfigureAwait(false);
+                _libraryManager.CreateItem(item, cancellationToken);
             }
             else if (dataChanged || info.DateLastUpdated > recording.DateLastSaved || statusChanged)
             {
@@ -985,8 +985,7 @@ namespace Emby.Server.Implementations.LiveTv
 
             var queryResult = _libraryManager.QueryItems(internalQuery);
 
-            var returnArray = (await _dtoService.GetBaseItemDtos(queryResult.Items, options, user)
-                .ConfigureAwait(false));
+            var returnArray = _dtoService.GetBaseItemDtos(queryResult.Items, options, user);
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -1070,8 +1069,7 @@ namespace Emby.Server.Implementations.LiveTv
 
             var user = _userManager.GetUserById(query.UserId);
 
-            var returnArray = (await _dtoService.GetBaseItemDtos(internalResult.Items, options, user)
-                .ConfigureAwait(false));
+            var returnArray = _dtoService.GetBaseItemDtos(internalResult.Items, options, user);
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -1221,9 +1219,9 @@ namespace Emby.Server.Implementations.LiveTv
             await EmbyTV.EmbyTV.Current.ScanForTunerDeviceChanges(cancellationToken).ConfigureAwait(false);
 
             var numComplete = 0;
-            double progressPerService = _services.Count == 0
+            double progressPerService = _services.Length == 0
                 ? 0
-                : 1 / _services.Count;
+                : 1 / _services.Length;
 
             var newChannelIdList = new List<Guid>();
             var newProgramIdList = new List<Guid>();
@@ -1255,7 +1253,7 @@ namespace Emby.Server.Implementations.LiveTv
 
                 numComplete++;
                 double percent = numComplete;
-                percent /= _services.Count;
+                percent /= _services.Length;
 
                 progress.Report(100 * percent);
             }
@@ -1410,7 +1408,7 @@ namespace Emby.Server.Implementations.LiveTv
 
                     if (newPrograms.Count > 0)
                     {
-                        await _libraryManager.CreateItems(newPrograms, cancellationToken).ConfigureAwait(false);
+                        _libraryManager.CreateItems(newPrograms, cancellationToken);
                     }
 
                     // TODO: Do this in bulk
@@ -1561,11 +1559,6 @@ namespace Emby.Server.Implementations.LiveTv
                 return new QueryResult<BaseItem>();
             }
 
-            if ((query.IsInProgress ?? false))
-            {
-                return new QueryResult<BaseItem>();
-            }
-
             var folderIds = EmbyTV.EmbyTV.Current.GetRecordingFolders()
                 .SelectMany(i => i.Locations)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -1577,13 +1570,10 @@ namespace Emby.Server.Implementations.LiveTv
 
             var excludeItemTypes = new List<string>();
 
-            if (!query.IsInProgress.HasValue)
-            {
-                folderIds.Add(internalLiveTvFolderId);
+            folderIds.Add(internalLiveTvFolderId);
 
-                excludeItemTypes.Add(typeof(LiveTvChannel).Name);
-                excludeItemTypes.Add(typeof(LiveTvProgram).Name);
-            }
+            excludeItemTypes.Add(typeof(LiveTvChannel).Name);
+            excludeItemTypes.Add(typeof(LiveTvProgram).Name);
 
             if (folderIds.Count == 0)
             {
@@ -1632,6 +1622,19 @@ namespace Emby.Server.Implementations.LiveTv
                 }
             }
 
+            if ((query.IsInProgress ?? false))
+            {
+                // TODO: filter
+                var allActivePaths = EmbyTV.EmbyTV.Current.GetAllActiveRecordings().Select(i => i.Path).ToArray();
+                var items = allActivePaths.Select(i => _libraryManager.FindByPath(i, false)).Where(i => i != null).ToArray();
+
+                return new QueryResult<BaseItem>
+                {
+                    Items = items,
+                    TotalRecordCount = items.Length
+                };
+            }
+
             return _libraryManager.GetItemsResult(new InternalItemsQuery(user)
             {
                 MediaTypes = new[] { MediaType.Video },
@@ -1651,15 +1654,10 @@ namespace Emby.Server.Implementations.LiveTv
             });
         }
 
-        public async Task<QueryResult<BaseItemDto>> GetRecordingSeries(RecordingQuery query, DtoOptions options, CancellationToken cancellationToken)
+        public QueryResult<BaseItemDto> GetRecordingSeries(RecordingQuery query, DtoOptions options, CancellationToken cancellationToken)
         {
             var user = string.IsNullOrEmpty(query.UserId) ? null : _userManager.GetUserById(query.UserId);
             if (user != null && !IsLiveTvEnabled(user))
-            {
-                return new QueryResult<BaseItemDto>();
-            }
-
-            if (_services.Count > 1)
             {
                 return new QueryResult<BaseItemDto>();
             }
@@ -1702,8 +1700,7 @@ namespace Emby.Server.Implementations.LiveTv
                 DtoOptions = options
             });
 
-            var returnArray = (await _dtoService.GetBaseItemDtos(internalResult.Items, options, user)
-                .ConfigureAwait(false));
+            var returnArray = _dtoService.GetBaseItemDtos(internalResult.Items, options, user);
 
             return new QueryResult<BaseItemDto>
             {
@@ -1722,13 +1719,9 @@ namespace Emby.Server.Implementations.LiveTv
 
             var folder = await GetInternalLiveTvFolder(cancellationToken).ConfigureAwait(false);
 
-            if (_services.Count == 1 && (!query.IsInProgress.HasValue || !query.IsInProgress.Value) && (!query.IsLibraryItem.HasValue || query.IsLibraryItem.Value))
+            // TODO: Figure out how to merge emby recordings + service recordings
+            if (_services.Length == 1)
             {
-                if (!query.IsInProgress.HasValue)
-                {
-                    await RefreshRecordings(folder.Id, cancellationToken).ConfigureAwait(false);
-                }
-
                 return GetEmbyRecordings(query, options, folder.Id, user);
             }
 
@@ -1920,6 +1913,11 @@ namespace Emby.Server.Implementations.LiveTv
             await AddRecordingInfo(programTuples, CancellationToken.None).ConfigureAwait(false);
         }
 
+        public ActiveRecordingInfo GetActiveRecordingInfo(string path)
+        {
+            return EmbyTV.EmbyTV.Current.GetActiveRecordingInfo(path);
+        }
+
         public void AddInfoToRecordingDto(BaseItem item, BaseItemDto dto, User user = null)
         {
             var recording = (ILiveTvRecording)item;
@@ -1949,20 +1947,6 @@ namespace Emby.Server.Implementations.LiveTv
             dto.IsKids = info.IsKids;
             dto.IsPremiere = info.IsPremiere;
 
-            dto.CanDelete = user == null
-                ? recording.CanDelete()
-                : recording.CanDelete(user);
-
-            if (dto.MediaSources == null)
-            {
-                dto.MediaSources = recording.GetMediaSources(true);
-            }
-
-            if (dto.MediaStreams == null)
-            {
-                dto.MediaStreams = dto.MediaSources.SelectMany(i => i.MediaStreams).ToArray();
-            }
-
             if (info.Status == RecordingStatus.InProgress && info.EndDate.HasValue)
             {
                 var now = DateTime.UtcNow.Ticks;
@@ -1970,6 +1954,65 @@ namespace Emby.Server.Implementations.LiveTv
                 var end = info.EndDate.Value.Ticks;
 
                 var pct = now - start;
+                pct /= end;
+                pct *= 100;
+                dto.CompletionPercentage = pct;
+            }
+
+            if (channel != null)
+            {
+                dto.ChannelName = channel.Name;
+
+                if (channel.HasImage(ImageType.Primary))
+                {
+                    dto.ChannelPrimaryImageTag = _tvDtoService.GetImageTag(channel);
+                }
+            }
+        }
+
+        public void AddInfoToRecordingDto(BaseItem item, BaseItemDto dto, ActiveRecordingInfo activeRecordingInfo, User user = null)
+        {
+            var service = EmbyTV.EmbyTV.Current;
+
+            var info = activeRecordingInfo.Timer;
+
+            var channel = string.IsNullOrWhiteSpace(info.ChannelId) ? null : GetInternalChannel(_tvDtoService.GetInternalChannelId(service.Name, info.ChannelId));
+
+            dto.SeriesTimerId = string.IsNullOrEmpty(info.SeriesTimerId)
+                ? null
+                : _tvDtoService.GetInternalSeriesTimerId(service.Name, info.SeriesTimerId).ToString("N");
+
+            dto.TimerId = string.IsNullOrEmpty(info.Id)
+                ? null
+                : _tvDtoService.GetInternalTimerId(service.Name, info.Id).ToString("N");
+
+            var startDate = info.StartDate;
+            var endDate = info.EndDate;
+
+            dto.StartDate = startDate;
+            dto.EndDate = endDate;
+            dto.Status = info.Status.ToString();
+            dto.IsRepeat = info.IsRepeat;
+            dto.EpisodeTitle = info.EpisodeTitle;
+            dto.IsMovie = info.IsMovie;
+            dto.IsSeries = info.IsSeries;
+            dto.IsSports = info.IsSports;
+            dto.IsLive = info.IsLive;
+            dto.IsNews = info.IsNews;
+            dto.IsKids = info.IsKids;
+            dto.IsPremiere = info.IsPremiere;
+
+            if (info.Status == RecordingStatus.InProgress)
+            {
+                startDate = info.StartDate.AddSeconds(0 - info.PrePaddingSeconds);
+                endDate = info.EndDate.AddSeconds(info.PostPaddingSeconds);
+
+                var now = DateTime.UtcNow.Ticks;
+                var start = startDate.Ticks;
+                var end = endDate.Ticks;
+
+                var pct = now - start;
+
                 pct /= end;
                 pct *= 100;
                 dto.CompletionPercentage = pct;
@@ -1994,8 +2037,7 @@ namespace Emby.Server.Implementations.LiveTv
 
             var internalResult = await GetInternalRecordings(query, options, cancellationToken).ConfigureAwait(false);
 
-            var returnArray = (await _dtoService.GetBaseItemDtos(internalResult.Items, options, user)
-                .ConfigureAwait(false));
+            var returnArray =  _dtoService.GetBaseItemDtos(internalResult.Items, options, user);
 
             return new QueryResult<BaseItemDto>
             {
@@ -2098,7 +2140,6 @@ namespace Emby.Server.Implementations.LiveTv
 
             if (service is EmbyTV.EmbyTV)
             {
-                // We can't trust that we'll be able to direct stream it through emby server,  no matter what the provider says
                 return service.DeleteRecordingAsync(GetItemExternalId(recording), CancellationToken.None);
             }
 
@@ -2323,7 +2364,7 @@ namespace Emby.Server.Implementations.LiveTv
             };
         }
 
-        public async Task AddChannelInfo(List<Tuple<BaseItemDto, LiveTvChannel>> tuples, DtoOptions options, User user)
+        public void AddChannelInfo(List<Tuple<BaseItemDto, LiveTvChannel>> tuples, DtoOptions options, User user)
         {
             var now = DateTime.UtcNow;
 
@@ -2348,7 +2389,6 @@ namespace Emby.Server.Implementations.LiveTv
             var currentChannelsDict = new Dictionary<string, BaseItemDto>();
 
             var addCurrentProgram = options.AddCurrentProgram;
-            var addMediaSources = options.Fields.Contains(ItemFields.MediaSources);
             var addServiceName = options.Fields.Contains(ItemFields.ServiceName);
 
             foreach (var tuple in tuples)
@@ -2367,11 +2407,6 @@ namespace Emby.Server.Implementations.LiveTv
 
                 currentChannelsDict[dto.Id] = dto;
 
-                if (addMediaSources)
-                {
-                    dto.MediaSources = channel.GetMediaSources(true);
-                }
-
                 if (addCurrentProgram)
                 {
                     var channelIdString = channel.Id.ToString("N");
@@ -2386,7 +2421,7 @@ namespace Emby.Server.Implementations.LiveTv
 
             if (addCurrentProgram)
             {
-                var currentProgramDtos = await _dtoService.GetBaseItemDtos(currentProgramsList, options, user).ConfigureAwait(false);
+                var currentProgramDtos = _dtoService.GetBaseItemDtos(currentProgramsList, options, user);
 
                 foreach (var programDto in currentProgramDtos)
                 {

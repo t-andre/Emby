@@ -227,6 +227,8 @@ namespace Emby.Server.Implementations
 
         protected IEnvironmentInfo EnvironmentInfo { get; set; }
 
+        private IBlurayExaminer BlurayExaminer { get; set; }
+
         public PackageVersionClass SystemUpdateLevel
         {
             get
@@ -861,7 +863,7 @@ namespace Emby.Server.Implementations
             SecurityManager = new PluginSecurityManager(this, HttpClient, JsonSerializer, ApplicationPaths, LogManager, FileSystemManager, CryptographyProvider);
             RegisterSingleInstance(SecurityManager);
 
-            InstallationManager = new InstallationManager(LogManager.GetLogger("InstallationManager"), this, ApplicationPaths, HttpClient, JsonSerializer, SecurityManager, ConfigurationManager, FileSystemManager, CryptographyProvider);
+            InstallationManager = new InstallationManager(LogManager.GetLogger("InstallationManager"), this, ApplicationPaths, HttpClient, JsonSerializer, SecurityManager, ConfigurationManager, FileSystemManager, CryptographyProvider, PackageRuntime);
             RegisterSingleInstance(InstallationManager);
 
             ZipClient = new ZipClient(FileSystemManager);
@@ -884,7 +886,8 @@ namespace Emby.Server.Implementations
             ITextEncoding textEncoding = new TextEncoding.TextEncoding(FileSystemManager, LogManager.GetLogger("TextEncoding"), JsonSerializer);
             RegisterSingleInstance(textEncoding);
             Utilities.EncodingHelper = textEncoding;
-            RegisterSingleInstance<IBlurayExaminer>(() => new BdInfoExaminer(FileSystemManager, textEncoding));
+            BlurayExaminer = new BdInfoExaminer(FileSystemManager, textEncoding);
+            RegisterSingleInstance(BlurayExaminer);
 
             RegisterSingleInstance<IXmlReaderSettingsFactory>(new XmlReaderSettingsFactory());
 
@@ -1045,7 +1048,15 @@ namespace Emby.Server.Implementations
 
             SetStaticProperties();
 
-            await ((UserManager)UserManager).Initialize().ConfigureAwait(false);
+            ((UserManager)UserManager).Initialize();
+        }
+
+        protected virtual string PackageRuntime
+        {
+            get
+            {
+                return "netframework";
+            }
         }
 
         public static void LogEnvironmentInfo(ILogger logger, IApplicationPaths appPaths, bool isStartup)
@@ -1194,7 +1205,7 @@ namespace Emby.Server.Implementations
 
         private IImageProcessor GetImageProcessor()
         {
-            return new ImageProcessor(LogManager.GetLogger("ImageProcessor"), ServerConfigurationManager.ApplicationPaths, FileSystemManager, JsonSerializer, ImageEncoder, () => LibraryManager, TimerFactory);
+            return new ImageProcessor(LogManager.GetLogger("ImageProcessor"), ServerConfigurationManager.ApplicationPaths, FileSystemManager, JsonSerializer, ImageEncoder, () => LibraryManager, TimerFactory, () => MediaEncoder);
         }
 
         protected virtual FFMpegInstallInfo GetFfmpegInstallInfo()
@@ -1327,7 +1338,8 @@ namespace Emby.Server.Implementations
                 ProcessFactory,
                 (Environment.ProcessorCount > 2 ? 14000 : 40000),
                 EnvironmentInfo.OperatingSystem == MediaBrowser.Model.System.OperatingSystem.Windows,
-                EnvironmentInfo);
+                EnvironmentInfo,
+                BlurayExaminer);
 
             MediaEncoder = mediaEncoder;
             RegisterSingleInstance(MediaEncoder);
@@ -1470,13 +1482,26 @@ namespace Emby.Server.Implementations
                     var assembly = plugin.GetType().Assembly;
                     var assemblyName = assembly.GetName();
 
-                    var attribute = (GuidAttribute)assembly.GetCustomAttributes(typeof(GuidAttribute), true)[0];
-                    var assemblyId = new Guid(attribute.Value);
-
                     var assemblyFileName = assemblyName.Name + ".dll";
                     var assemblyFilePath = Path.Combine(ApplicationPaths.PluginsPath, assemblyFileName);
 
-                    assemblyPlugin.SetAttributes(assemblyFilePath, assemblyFileName, assemblyName.Version, assemblyId);
+                    assemblyPlugin.SetAttributes(assemblyFilePath, assemblyFileName, assemblyName.Version);
+
+                    try
+                    {
+                        var idAttributes = assembly.GetCustomAttributes(typeof(GuidAttribute), true);
+                        if (idAttributes.Length > 0)
+                        {
+                            var attribute = (GuidAttribute)idAttributes[0];
+                            var assemblyId = new Guid(attribute.Value);
+
+                            assemblyPlugin.SetId(assemblyId);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.ErrorException("Error getting plugin Id from {0}.", ex, plugin.GetType().FullName);
+                    }
                 }
 
                 var isFirstRun = !File.Exists(plugin.ConfigurationFilePath);

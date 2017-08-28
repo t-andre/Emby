@@ -778,6 +778,11 @@ namespace MediaBrowser.Controller.MediaEncoding
                 return false;
             }
 
+            if (state.EnableMpDecimate)
+            {
+                return false;
+            }
+
             if (videoStream.IsInterlaced)
             {
                 if (request.DeInterlace)
@@ -1449,6 +1454,11 @@ namespace MediaBrowser.Controller.MediaEncoding
                 }
             }
 
+            if (state.EnableMpDecimate)
+            {
+                filters.Add("mpdecimate,setpts=N/FRAME_RATE/TB");
+            }
+
             if (filters.Count > 0)
             {
                 output += string.Format(" -vf \"{0}\"", string.Join(",", filters.ToArray()));
@@ -1664,15 +1674,15 @@ namespace MediaBrowser.Controller.MediaEncoding
 
                 if (mediaSource.VideoType.Value == VideoType.BluRay || mediaSource.VideoType.Value == VideoType.Dvd)
                 {
-                    state.PlayableStreamFileNames = Video.QueryPlayableStreamFiles(state.MediaPath, mediaSource.VideoType.Value);
+                    state.PlayableStreamFileNames = Video.QueryPlayableStreamFiles(state.MediaPath, mediaSource.VideoType.Value).Select(Path.GetFileName).ToArray();
                 }
                 else if (mediaSource.VideoType.Value == VideoType.Iso && state.IsoType == IsoType.BluRay)
                 {
-                    state.PlayableStreamFileNames = Video.QueryPlayableStreamFiles(state.MediaPath, VideoType.BluRay);
+                    state.PlayableStreamFileNames = Video.QueryPlayableStreamFiles(state.MediaPath, VideoType.BluRay).Select(Path.GetFileName).ToArray();
                 }
                 else if (mediaSource.VideoType.Value == VideoType.Iso && state.IsoType == IsoType.Dvd)
                 {
-                    state.PlayableStreamFileNames = Video.QueryPlayableStreamFiles(state.MediaPath, VideoType.Dvd);
+                    state.PlayableStreamFileNames = Video.QueryPlayableStreamFiles(state.MediaPath, VideoType.Dvd).Select(Path.GetFileName).ToArray();
                 }
                 else
                 {

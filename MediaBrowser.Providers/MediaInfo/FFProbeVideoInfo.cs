@@ -25,9 +25,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-
-using MediaBrowser.Controller.IO;
-using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Globalization;
 
 namespace MediaBrowser.Providers.MediaInfo
@@ -48,8 +45,6 @@ namespace MediaBrowser.Providers.MediaInfo
         private readonly ISubtitleManager _subtitleManager;
         private readonly IChapterManager _chapterManager;
         private readonly ILibraryManager _libraryManager;
-
-        private readonly CultureInfo _usCulture = new CultureInfo("en-US");
 
         public FFProbeVideoInfo(ILogger logger, IIsoManager isoManager, IMediaEncoder mediaEncoder, IItemRepository itemRepo, IBlurayExaminer blurayExaminer, ILocalizationManager localization, IApplicationPaths appPaths, IJsonSerializer json, IEncodingManager encodingManager, IFileSystem fileSystem, IServerConfigurationManager config, ISubtitleManager subtitleManager, IChapterManager chapterManager, ILibraryManager libraryManager)
         {
@@ -203,7 +198,7 @@ namespace MediaBrowser.Providers.MediaInfo
             var libraryOptions = _libraryManager.GetLibraryOptions(video);
 
             FetchEmbeddedInfo(video, mediaInfo, options, libraryOptions);
-            await FetchPeople(video, mediaInfo, options).ConfigureAwait(false);
+            FetchPeople(video, mediaInfo, options);
 
             video.IsHD = mediaStreams.Any(i => i.Type == MediaStreamType.Video && i.Width.HasValue && i.Width.Value >= 1260);
 
@@ -216,7 +211,7 @@ namespace MediaBrowser.Providers.MediaInfo
 
             video.Video3DFormat = video.Video3DFormat ?? mediaInfo.Video3DFormat;
 
-            await _itemRepo.SaveMediaStreams(video.Id, mediaStreams, cancellationToken).ConfigureAwait(false);
+            _itemRepo.SaveMediaStreams(video.Id, mediaStreams, cancellationToken);
 
             if (options.MetadataRefreshMode == MetadataRefreshMode.FullRefresh ||
                 options.MetadataRefreshMode == MetadataRefreshMode.Default)
@@ -236,7 +231,7 @@ namespace MediaBrowser.Providers.MediaInfo
 
                 await _encodingManager.RefreshChapterImages(video, chapters, extractDuringScan, false, cancellationToken).ConfigureAwait(false);
 
-                await _chapterManager.SaveChapters(video.Id.ToString(), chapters).ConfigureAwait(false);
+                _chapterManager.SaveChapters(video.Id.ToString(), chapters);
             }
         }
 
@@ -431,7 +426,7 @@ namespace MediaBrowser.Providers.MediaInfo
             }
         }
 
-        private async Task FetchPeople(Video video, Model.MediaInfo.MediaInfo data, MetadataRefreshOptions options)
+        private void FetchPeople(Video video, Model.MediaInfo.MediaInfo data, MetadataRefreshOptions options)
         {
             var isFullRefresh = options.MetadataRefreshMode == MetadataRefreshMode.FullRefresh;
 
@@ -451,7 +446,7 @@ namespace MediaBrowser.Providers.MediaInfo
                         });
                     }
 
-                    await _libraryManager.UpdatePeople(video, people);
+                    _libraryManager.UpdatePeople(video, people);
                 }
             }
         }
@@ -566,7 +561,7 @@ namespace MediaBrowser.Providers.MediaInfo
                 item.RunTimeTicks = GetRuntime(primaryTitle);
             }
 
-            return GetPrimaryPlaylistVobFiles(item, mount, titleNumber)
+            return _mediaEncoder.GetPrimaryPlaylistVobFiles(item.Path, mount, titleNumber)
                 .Select(Path.GetFileName)
                 .ToArray();
         }
@@ -615,83 +610,6 @@ namespace MediaBrowser.Providers.MediaInfo
             }
 
             return null;
-        }
-
-        private IEnumerable<string> GetPrimaryPlaylistVobFiles(Video video, IIsoMount isoMount, uint? titleNumber)
-        {
-            // min size 300 mb
-            const long minPlayableSize = 314572800;
-
-            var root = isoMount != null ? isoMount.MountedPath : video.Path;
-
-            // Try to eliminate menus and intros by skipping all files at the front of the list that are less than the minimum size
-            // Once we reach a file that is at least the minimum, return all subsequent ones
-            var allVobs = _fileSystem.GetFiles(root, new[] { ".vob" }, false, true)
-                .OrderBy(i => i.FullName)
-                .ToList();
-
-            // If we didn't find any satisfying the min length, just take them all
-            if (allVobs.Count == 0)
-            {
-                _logger.Error("No vobs found in dvd structure.");
-                return new List<string>();
-            }
-
-            if (titleNumber.HasValue)
-            {
-                var prefix = string.Format("VTS_0{0}_", titleNumber.Value.ToString(_usCulture));
-                var vobs = allVobs.Where(i => i.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
-
-                if (vobs.Count > 0)
-                {
-                    var minSizeVobs = vobs
-                        .SkipWhile(f => f.Length < minPlayableSize)
-                        .ToList();
-
-                    return minSizeVobs.Count == 0 ? vobs.Select(i => i.FullName) : minSizeVobs.Select(i => i.FullName);
-                }
-
-                _logger.Info("Could not determine vob file list for {0} using DvdLib. Will scan using file sizes.", video.Path);
-            }
-
-            var files = allVobs
-                .SkipWhile(f => f.Length < minPlayableSize)
-                .ToList();
-
-            // If we didn't find any satisfying the min length, just take them all
-            if (files.Count == 0)
-            {
-                _logger.Warn("Vob size filter resulted in zero matches. Taking all vobs.");
-                files = allVobs;
-            }
-
-            // Assuming they're named "vts_05_01", take all files whose second part matches that of the first file
-            if (files.Count > 0)
-            {
-                var parts = _fileSystem.GetFileNameWithoutExtension(files[0]).Split('_');
-
-                if (parts.Length == 3)
-                {
-                    var title = parts[1];
-
-                    files = files.TakeWhile(f =>
-                    {
-                        var fileParts = _fileSystem.GetFileNameWithoutExtension(f).Split('_');
-
-                        return fileParts.Length == 3 && string.Equals(title, fileParts[1], StringComparison.OrdinalIgnoreCase);
-
-                    }).ToList();
-
-                    // If this resulted in not getting any vobs, just take them all
-                    if (files.Count == 0)
-                    {
-                        _logger.Warn("Vob filename filter resulted in zero matches. Taking all vobs.");
-                        files = allVobs;
-                    }
-                }
-            }
-
-            return files.Select(i => i.FullName);
         }
     }
 }

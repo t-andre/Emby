@@ -182,8 +182,7 @@ namespace Emby.Server.Implementations.Channels
             {
             };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user)
-                .ConfigureAwait(false));
+            var returnItems = _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user);
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -429,7 +428,7 @@ namespace Emby.Server.Implementations.Channels
 
             if (isNew)
             {
-                await _libraryManager.CreateItem(item, cancellationToken).ConfigureAwait(false);
+                _libraryManager.CreateItem(item, cancellationToken);
             }
             else if (forceUpdate)
             {
@@ -567,7 +566,7 @@ namespace Emby.Server.Implementations.Channels
                 Fields = query.Fields
             };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(items, dtoOptions, user).ConfigureAwait(false));
+            var returnItems = _dtoService.GetBaseItemDtos(items, dtoOptions, user);
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -832,8 +831,7 @@ namespace Emby.Server.Implementations.Channels
                 Fields = query.Fields
             };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user)
-                .ConfigureAwait(false));
+            var returnItems = _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user);
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -984,8 +982,7 @@ namespace Emby.Server.Implementations.Channels
                 Fields = query.Fields
             };
 
-            var returnItems = (await _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user)
-                .ConfigureAwait(false));
+            var returnItems = _dtoService.GetBaseItemDtos(internalResult.Items, dtoOptions, user);
 
             var result = new QueryResult<BaseItemDto>
             {
@@ -1330,7 +1327,7 @@ namespace Emby.Server.Implementations.Channels
             var hasArtists = item as IHasArtist;
             if (hasArtists != null)
             {
-                hasArtists.Artists = info.Artists;
+                hasArtists.Artists = info.Artists.ToArray();
             }
 
             var hasAlbumArtists = item as IHasAlbumArtist;
@@ -1388,11 +1385,11 @@ namespace Emby.Server.Implementations.Channels
 
             if (isNew)
             {
-                await _libraryManager.CreateItem(item, cancellationToken).ConfigureAwait(false);
+                _libraryManager.CreateItem(item, cancellationToken);
 
                 if (info.People != null && info.People.Count > 0)
                 {
-                    await _libraryManager.UpdatePeople(item, info.People ?? new List<PersonInfo>()).ConfigureAwait(false);
+                    _libraryManager.UpdatePeople(item, info.People ?? new List<PersonInfo>());
                 }
             }
             else if (forceUpdate)

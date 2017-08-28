@@ -75,6 +75,11 @@ namespace Emby.Server.Implementations.MediaEncoder
                 return false;
             }
 
+            if (!video.IsCompleteMedia)
+            {
+                return false;
+            }
+
             // Can't extract images if there are no video streams
             return video.DefaultVideoStreamIndex.HasValue;
         }
@@ -174,7 +179,7 @@ namespace Emby.Server.Implementations.MediaEncoder
 
             if (saveChapters && changesMade)
             {
-                await _chapterManager.SaveChapters(video.Id.ToString(), chapters).ConfigureAwait(false);
+                _chapterManager.SaveChapters(video.Id.ToString(), chapters);
             }
 
             DeleteDeadImages(currentImages, chapters);
