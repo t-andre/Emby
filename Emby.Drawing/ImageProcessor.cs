@@ -126,6 +126,7 @@ namespace Emby.Drawing
                 return new string[]
                 {
                     "tiff",
+                    "tif",
                     "jpeg",
                     "jpg",
                     "png",
@@ -202,10 +203,9 @@ namespace Emby.Drawing
         }
 
         private static readonly string[] TransparentImageTypes = new string[] { ".png", ".webp" };
-        private bool SupportsTransparency(string path)
+        public bool SupportsTransparency(string path)
         {
             return TransparentImageTypes.Contains(Path.GetExtension(path) ?? string.Empty);
-            ;
         }
 
         public async Task<Tuple<string, string, DateTime>> ProcessImage(ImageProcessingOptions options)
@@ -238,6 +238,7 @@ namespace Emby.Drawing
             var supportedImageInfo = await GetSupportedImage(originalImagePath, dateModified).ConfigureAwait(false);
             originalImagePath = supportedImageInfo.Item1;
             dateModified = supportedImageInfo.Item2;
+            var requiresTransparency = TransparentImageTypes.Contains(Path.GetExtension(originalImagePath) ?? string.Empty);
 
             if (options.Enhancers.Count > 0)
             {
@@ -252,10 +253,11 @@ namespace Emby.Drawing
                     Type = originalImage.Type,
                     Path = originalImagePath
 
-                }, item, options.ImageIndex, options.Enhancers).ConfigureAwait(false);
+                }, requiresTransparency, item, options.ImageIndex, options.Enhancers).ConfigureAwait(false);
 
                 originalImagePath = tuple.Item1;
                 dateModified = tuple.Item2;
+                requiresTransparency = tuple.Item3;
             }
 
             var photo = item as Photo;
@@ -267,7 +269,7 @@ namespace Emby.Drawing
                 orientation = photo.Orientation;
             }
 
-            if (options.HasDefaultOptions(originalImagePath) && !autoOrient)
+            if (options.HasDefaultOptions(originalImagePath) && (!autoOrient || !options.RequiresAutoOrientation))
             {
                 // Just spit out the original file if all the options are default
                 return new Tuple<string, string, DateTime>(originalImagePath, MimeTypes.GetMimeType(originalImagePath), dateModified);
@@ -284,7 +286,7 @@ namespace Emby.Drawing
             var newSize = ImageHelper.GetNewImageSize(options, originalImageSize);
             var quality = options.Quality;
 
-            var outputFormat = GetOutputFormat(options.SupportedOutputFormats[0]);
+            var outputFormat = GetOutputFormat(options.SupportedOutputFormats, requiresTransparency);
             var cacheFilePath = GetCacheFilePath(originalImagePath, newSize, quality, dateModified, outputFormat, options.AddPlayedIndicator, options.PercentPlayed, options.UnplayedCount, options.Blur, options.BackgroundColor, options.ForegroundLayer);
 
             try
@@ -333,6 +335,34 @@ namespace Emby.Drawing
                 // Just spit out the original file if all the options are default
                 return new Tuple<string, string, DateTime>(originalImagePath, MimeTypes.GetMimeType(originalImagePath), dateModified);
             }
+        }
+
+        private ImageFormat GetOutputFormat(ImageFormat[] clientSupportedFormats, bool requiresTransparency)
+        {
+            var serverFormats = GetSupportedImageOutputFormats();
+
+            // Client doesn't care about format, so start with webp if supported
+            if (serverFormats.Contains(ImageFormat.Webp) && clientSupportedFormats.Contains(ImageFormat.Webp))
+            {
+                return ImageFormat.Webp;
+            }
+
+            // If transparency is needed and webp isn't supported, than png is the only option
+            if (requiresTransparency)
+            {
+                return ImageFormat.Png;
+            }
+
+            foreach (var format in clientSupportedFormats)
+            {
+                if (serverFormats.Contains(format))
+                {
+                    return format;
+                }
+            }
+
+            // We should never actually get here
+            return ImageFormat.Jpg;
         }
 
         private void CopyFile(string src, string destination)
@@ -386,21 +416,6 @@ namespace Emby.Drawing
             }
 
             return MimeTypes.GetMimeType(path);
-        }
-
-        private ImageFormat GetOutputFormat(ImageFormat requestedFormat)
-        {
-            if (requestedFormat == ImageFormat.Webp && !_imageEncoder.SupportedOutputFormats.Contains(ImageFormat.Webp))
-            {
-                return ImageFormat.Png;
-            }
-
-            return requestedFormat;
-        }
-
-        private Tuple<string, DateTime> GetResult(string path)
-        {
-            return new Tuple<string, DateTime>(path, _fileSystem.GetLastWriteTimeUtc(path));
         }
 
         /// <summary>
@@ -709,6 +724,12 @@ namespace Emby.Drawing
                 .TrimStart('.')
                 .Replace("jpeg", "jpg", StringComparison.OrdinalIgnoreCase);
 
+            // These are just jpg files renamed as tbn
+            if (string.Equals(inputFormat, "tbn", StringComparison.OrdinalIgnoreCase))
+            {
+                return new Tuple<string, DateTime>(originalImagePath, dateModified);
+            }
+
             if (!_imageEncoder.SupportedInputFormats.Contains(inputFormat, StringComparer.OrdinalIgnoreCase))
             {
                 try
@@ -752,12 +773,15 @@ namespace Emby.Drawing
 
             var imageInfo = item.GetImageInfo(imageType, imageIndex);
 
-            var result = await GetEnhancedImage(imageInfo, item, imageIndex, enhancers);
+            var inputImageSupportsTransparency = SupportsTransparency(imageInfo.Path);
+
+            var result = await GetEnhancedImage(imageInfo, inputImageSupportsTransparency, item, imageIndex, enhancers);
 
             return result.Item1;
         }
 
-        private async Task<Tuple<string, DateTime>> GetEnhancedImage(ItemImageInfo image,
+        private async Task<Tuple<string, DateTime, bool>> GetEnhancedImage(ItemImageInfo image,
+            bool inputImageSupportsTransparency,
             IHasMetadata item,
             int imageIndex,
             List<IImageEnhancer> enhancers)
@@ -771,12 +795,16 @@ namespace Emby.Drawing
                 var cacheGuid = GetImageCacheTag(item, image, enhancers);
 
                 // Enhance if we have enhancers
-                var ehnancedImagePath = await GetEnhancedImageInternal(originalImagePath, item, imageType, imageIndex, enhancers, cacheGuid).ConfigureAwait(false);
+                var ehnancedImageInfo = await GetEnhancedImageInternal(originalImagePath, item, imageType, imageIndex, enhancers, cacheGuid).ConfigureAwait(false);
+
+                var ehnancedImagePath = ehnancedImageInfo.Item1;
 
                 // If the path changed update dateModified
                 if (!string.Equals(ehnancedImagePath, originalImagePath, StringComparison.OrdinalIgnoreCase))
                 {
-                    return GetResult(ehnancedImagePath);
+                    var treatmentRequiresTransparency = ehnancedImageInfo.Item2;
+
+                    return new Tuple<string, DateTime, bool>(ehnancedImagePath, _fileSystem.GetLastWriteTimeUtc(ehnancedImagePath), treatmentRequiresTransparency);
                 }
             }
             catch (Exception ex)
@@ -784,7 +812,7 @@ namespace Emby.Drawing
                 _logger.Error("Error enhancing image", ex);
             }
 
-            return new Tuple<string, DateTime>(originalImagePath, dateModified);
+            return new Tuple<string, DateTime, bool>(originalImagePath, dateModified, inputImageSupportsTransparency);
         }
 
         /// <summary>
@@ -802,11 +830,11 @@ namespace Emby.Drawing
         /// or
         /// item
         /// </exception>
-        private async Task<string> GetEnhancedImageInternal(string originalImagePath,
+        private async Task<Tuple<string, bool>> GetEnhancedImageInternal(string originalImagePath,
             IHasMetadata item,
             ImageType imageType,
             int imageIndex,
-            IEnumerable<IImageEnhancer> supportedEnhancers,
+            List<IImageEnhancer> supportedEnhancers,
             string cacheGuid)
         {
             if (string.IsNullOrEmpty(originalImagePath))
@@ -819,13 +847,26 @@ namespace Emby.Drawing
                 throw new ArgumentNullException("item");
             }
 
+            var treatmentRequiresTransparency = false;
+            foreach (var enhancer in supportedEnhancers)
+            {
+                if (!treatmentRequiresTransparency)
+                {
+                    treatmentRequiresTransparency = enhancer.GetEnhancedImageInfo(item, originalImagePath, imageType, imageIndex).RequiresTransparency;
+                }
+            }
+
             // All enhanced images are saved as png to allow transparency
-            var enhancedImagePath = GetCachePath(EnhancedImageCachePath, cacheGuid + ".png");
+            var cacheExtension = _imageEncoder.SupportedOutputFormats.Contains(ImageFormat.Webp) ? 
+                ".webp" : 
+                (treatmentRequiresTransparency ? ".png" : ".jpg");
+
+            var enhancedImagePath = GetCachePath(EnhancedImageCachePath, cacheGuid + cacheExtension);
 
             // Check again in case of contention
             if (_fileSystem.FileExists(enhancedImagePath))
             {
-                return enhancedImagePath;
+                return new Tuple<string, bool>(enhancedImagePath, treatmentRequiresTransparency);
             }
 
             _fileSystem.CreateDirectory(_fileSystem.GetDirectoryName(enhancedImagePath));
@@ -844,7 +885,7 @@ namespace Emby.Drawing
 
             }
 
-            return tmpPath;
+            return new Tuple<string, bool>(tmpPath, treatmentRequiresTransparency);
         }
 
         /// <summary>
@@ -967,8 +1008,15 @@ namespace Emby.Drawing
         public void Dispose()
         {
             _disposed = true;
-            _imageEncoder.Dispose();
+
+            var disposable = _imageEncoder as IDisposable;
+            if (disposable != null)
+            {
+                disposable.Dispose();
+            }
+
             _saveImageSizeTimer.Dispose();
+            GC.SuppressFinalize(this);
         }
 
         private void CheckDisposed()

@@ -252,6 +252,7 @@ namespace Emby.Server.Implementations.Data
                     AddColumn(db, "TypedBaseItems", "AlbumArtists", "Text", existingColumnNames);
                     AddColumn(db, "TypedBaseItems", "ExternalId", "Text", existingColumnNames);
                     AddColumn(db, "TypedBaseItems", "SeriesPresentationUniqueKey", "Text", existingColumnNames);
+                    AddColumn(db, "TypedBaseItems", "ShowId", "Text", existingColumnNames);
 
                     existingColumnNames = GetColumnNames(db, "ItemValues");
                     AddColumn(db, "ItemValues", "CleanValue", "Text", existingColumnNames);
@@ -457,7 +458,8 @@ namespace Emby.Server.Implementations.Data
             "Artists",
             "AlbumArtists",
             "ExternalId",
-            "SeriesPresentationUniqueKey"
+            "SeriesPresentationUniqueKey",
+            "ShowId"
         };
 
         private readonly string[] _mediaStreamSaveColumns =
@@ -577,7 +579,8 @@ namespace Emby.Server.Implementations.Data
                 "Artists",
                 "AlbumArtists",
                 "ExternalId",
-            "SeriesPresentationUniqueKey"
+                "SeriesPresentationUniqueKey",
+                "ShowId"
             };
 
             var saveItemCommandCommandText = "replace into TypedBaseItems (" + string.Join(",", saveColumns.ToArray()) + ") values (";
@@ -1043,6 +1046,16 @@ namespace Emby.Server.Implementations.Data
             }
             saveItemStatement.TryBind("@AlbumArtists", albumArtists);
             saveItemStatement.TryBind("@ExternalId", item.ExternalId);
+
+            var program = item as LiveTvProgram;
+            if (program != null)
+            {
+                saveItemStatement.TryBind("@ShowId", program.ShowId);
+            }
+            else
+            {
+                saveItemStatement.TryBindNull("@ShowId");
+            }
 
             saveItemStatement.MoveNext();
         }
@@ -1935,6 +1948,23 @@ namespace Emby.Server.Implementations.Data
                 index++;
             }
 
+            if (enableProgramAttributes)
+            {
+                var program = item as LiveTvProgram;
+                if (program != null)
+                {
+                    if (!reader.IsDBNull(index))
+                    {
+                        program.ShowId = reader.GetString(index);
+                    }
+                    index++;
+                }
+                else
+                {
+                    index ++;
+                }
+            }
+
             return item;
         }
 
@@ -2135,8 +2165,7 @@ namespace Emby.Server.Implementations.Data
                 //return true;
             }
 
-            var sortingFields = query.SortBy.ToList();
-            sortingFields.AddRange(query.OrderBy.Select(i => i.Item1));
+            var sortingFields = query.OrderBy.Select(i => i.Item1).ToList();
 
             if (sortingFields.Contains(ItemSortBy.IsFavoriteOrLiked, StringComparer.OrdinalIgnoreCase))
             {
@@ -2442,6 +2471,7 @@ namespace Emby.Server.Implementations.Data
                 list.Remove("IsPremiere");
                 list.Remove("EpisodeTitle");
                 list.Remove("IsRepeat");
+                list.Remove("ShowId");
             }
 
             if (!HasEpisodeAttributes(query))
@@ -2975,16 +3005,7 @@ namespace Emby.Server.Implementations.Data
         private string GetOrderByText(InternalItemsQuery query)
         {
             var orderBy = query.OrderBy.ToList();
-            var enableOrderInversion = true;
-
-            if (orderBy.Count == 0)
-            {
-                orderBy.AddRange(query.SortBy.Select(i => new Tuple<string, SortOrder>(i, query.SortOrder)));
-            }
-            else
-            {
-                enableOrderInversion = false;
-            }
+            var enableOrderInversion = false;
 
             if (query.SimilarTo != null)
             {
@@ -2993,12 +3014,10 @@ namespace Emby.Server.Implementations.Data
                     orderBy.Add(new Tuple<string, SortOrder>(ItemSortBy.Random, SortOrder.Ascending));
                     orderBy.Add(new Tuple<string, SortOrder>("SimilarityScore", SortOrder.Descending));
                     //orderBy.Add(new Tuple<string, SortOrder>(ItemSortBy.Random, SortOrder.Ascending));
-                    query.SortOrder = SortOrder.Descending;
-                    enableOrderInversion = false;
                 }
             }
 
-            query.OrderBy = orderBy;
+            query.OrderBy = orderBy.ToArray();
 
             if (orderBy.Count == 0)
             {
@@ -4232,6 +4251,54 @@ namespace Emby.Server.Implementations.Data
                 else
                 {
                     whereClauses.Add("(Overview is null OR Overview='')");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(query.HasNoAudioTrackWithLanguage))
+            {
+                whereClauses.Add("((select language from MediaStreams where MediaStreams.ItemId=A.Guid and MediaStreams.StreamType='Audio' and MediaStreams.Language=@HasNoAudioTrackWithLanguage limit 1) is null)");
+                if (statement != null)
+                {
+                    statement.TryBind("@HasNoAudioTrackWithLanguage", query.HasNoAudioTrackWithLanguage);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(query.HasNoInternalSubtitleTrackWithLanguage))
+            {
+                whereClauses.Add("((select language from MediaStreams where MediaStreams.ItemId=A.Guid and MediaStreams.StreamType='Subtitle' and MediaStreams.IsExternal=0 and MediaStreams.Language=@HasNoInternalSubtitleTrackWithLanguage limit 1) is null)");
+                if (statement != null)
+                {
+                    statement.TryBind("@HasNoInternalSubtitleTrackWithLanguage", query.HasNoInternalSubtitleTrackWithLanguage);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(query.HasNoExternalSubtitleTrackWithLanguage))
+            {
+                whereClauses.Add("((select language from MediaStreams where MediaStreams.ItemId=A.Guid and MediaStreams.StreamType='Subtitle' and MediaStreams.IsExternal=1 and MediaStreams.Language=@HasNoExternalSubtitleTrackWithLanguage limit 1) is null)");
+                if (statement != null)
+                {
+                    statement.TryBind("@HasNoExternalSubtitleTrackWithLanguage", query.HasNoExternalSubtitleTrackWithLanguage);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(query.HasNoSubtitleTrackWithLanguage))
+            {
+                whereClauses.Add("((select language from MediaStreams where MediaStreams.ItemId=A.Guid and MediaStreams.StreamType='Subtitle' and MediaStreams.Language=@HasNoSubtitleTrackWithLanguage limit 1) is null)");
+                if (statement != null)
+                {
+                    statement.TryBind("@HasNoSubtitleTrackWithLanguage", query.HasNoSubtitleTrackWithLanguage);
+                }
+            }
+
+            if (query.HasChapterImages.HasValue)
+            {
+                if (query.HasChapterImages.Value)
+                {
+                    whereClauses.Add("((select imagepath from Chapters2 where Chapters2.ItemId=A.Guid and imagepath not null limit 1) not null)");
+                }
+                else
+                {
+                    whereClauses.Add("((select imagepath from Chapters2 where Chapters2.ItemId=A.Guid and imagepath not null limit 1) is null)");
                 }
             }
 

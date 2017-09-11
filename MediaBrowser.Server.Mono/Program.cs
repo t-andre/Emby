@@ -11,6 +11,7 @@ using System.Net.Security;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Emby.Drawing;
 using Emby.Server.Core.Cryptography;
 using Emby.Server.Core;
 using Emby.Server.Implementations;
@@ -18,6 +19,7 @@ using Emby.Server.Implementations.EnvironmentInfo;
 using Emby.Server.Implementations.IO;
 using Emby.Server.Implementations.Logging;
 using Emby.Server.Implementations.Networking;
+using MediaBrowser.Controller;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.System;
 using Mono.Unix.Native;
@@ -28,10 +30,10 @@ namespace MediaBrowser.Server.Mono
 {
     public class MainClass
     {
-        private static ApplicationHost _appHost;
-
         private static ILogger _logger;
         private static IFileSystem FileSystem;
+        private static IServerApplicationPaths _appPaths;
+        private static ILogManager _logManager;
 
         private static readonly TaskCompletionSource<bool> ApplicationTaskCompletionSource = new TaskCompletionSource<bool>();
         private static bool _restartOnShutdown;
@@ -39,7 +41,6 @@ namespace MediaBrowser.Server.Mono
         public static void Main(string[] args)
         {
             var applicationPath = Assembly.GetEntryAssembly().Location;
-            var appFolderPath = Path.GetDirectoryName(applicationPath);
 
             SetSqliteProvider();
 
@@ -49,25 +50,24 @@ namespace MediaBrowser.Server.Mono
             var customProgramDataPath = options.GetOption("-programdata");
 
             var appPaths = CreateApplicationPaths(applicationPath, customProgramDataPath);
+            _appPaths = appPaths;
 
-            var logManager = new SimpleLogManager(appPaths.LogDirectoryPath, "server");
-            logManager.ReloadLogger(LogSeverity.Info);
-            logManager.AddConsoleOutput();
-
-            var logger = _logger = logManager.GetLogger("Main");
-
-            ApplicationHost.LogEnvironmentInfo(logger, appPaths, true);
-            
-            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
-
-            try
+            using (var logManager = new SimpleLogManager(appPaths.LogDirectoryPath, "server"))
             {
+                _logManager = logManager;
+
+                logManager.ReloadLogger(LogSeverity.Info);
+                logManager.AddConsoleOutput();
+
+                var logger = _logger = logManager.GetLogger("Main");
+
+                ApplicationHost.LogEnvironmentInfo(logger, appPaths, true);
+
+                AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+
                 RunApplication(appPaths, logManager, options);
-            }
-            finally
-            {
+
                 _logger.Info("Disposing app host");
-                _appHost.Dispose();
 
                 if (_restartOnShutdown)
                 {
@@ -104,40 +104,42 @@ namespace MediaBrowser.Server.Mono
 
             FileSystem = fileSystem;
 
-            var imageEncoder = ImageEncoderHelper.GetImageEncoder(_logger, logManager, fileSystem, options, () => _appHost.HttpClient, appPaths, environmentInfo);
-
-            _appHost = new MonoAppHost(appPaths,
+            using (var appHost = new MonoAppHost(appPaths,
                 logManager,
                 options,
                 fileSystem,
                 new PowerManagement(),
                 "emby.mono.zip",
                 environmentInfo,
-                imageEncoder,
+                new NullImageEncoder(),
                 new SystemEvents(logManager.GetLogger("SystemEvents")),
-                new NetworkManager(logManager.GetLogger("NetworkManager")));
-
-            if (options.ContainsOption("-v"))
+                new NetworkManager(logManager.GetLogger("NetworkManager"))))
             {
-                Console.WriteLine(_appHost.ApplicationVersion.ToString());
-                return;
+                if (options.ContainsOption("-v"))
+                {
+                    Console.WriteLine(appHost.ApplicationVersion.ToString());
+                    return;
+                }
+
+                Console.WriteLine("appHost.Init");
+
+                var initProgress = new Progress<double>();
+
+                var task = appHost.Init(initProgress);
+
+                appHost.ImageProcessor.ImageEncoder = ImageEncoderHelper.GetImageEncoder(_logger, logManager, fileSystem, options, () => appHost.HttpClient, appPaths, environmentInfo);
+
+                Task.WaitAll(task);
+
+                Console.WriteLine("Running startup tasks");
+
+                task = appHost.RunStartupTasks();
+                Task.WaitAll(task);
+
+                task = ApplicationTaskCompletionSource.Task;
+
+                Task.WaitAll(task);
             }
-
-            Console.WriteLine("appHost.Init");
-
-            var initProgress = new Progress<double>();
-
-            var task = _appHost.Init(initProgress);
-            Task.WaitAll(task);
-
-            Console.WriteLine("Running startup tasks");
-
-            task = _appHost.RunStartupTasks();
-            Task.WaitAll(task);
-
-            task = ApplicationTaskCompletionSource.Task;
-
-            Task.WaitAll(task);
         }
 
         private static MonoEnvironmentInfo GetEnvironmentInfo()
@@ -229,7 +231,7 @@ namespace MediaBrowser.Server.Mono
         {
             var exception = (Exception)e.ExceptionObject;
 
-            new UnhandledExceptionWriter(_appHost.ServerConfigurationManager.ApplicationPaths, _logger, _appHost.LogManager, FileSystem, new ConsoleLogger()).Log(exception);
+            new UnhandledExceptionWriter(_appPaths, _logger, _logManager, FileSystem, new ConsoleLogger()).Log(exception);
 
             if (!Debugger.IsAttached)
             {
