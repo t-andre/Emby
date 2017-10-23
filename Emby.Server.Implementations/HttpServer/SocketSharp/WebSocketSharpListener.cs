@@ -84,8 +84,8 @@ namespace Emby.Server.Implementations.HttpServer.SocketSharp
 
         private void ProcessContext(HttpListenerContext context)
         {
-            InitTask(context, _disposeCancellationToken);
-            //Task.Run(() => InitTask(context, _disposeCancellationToken));
+            //InitTask(context, _disposeCancellationToken);
+            Task.Run(() => InitTask(context, _disposeCancellationToken));
         }
 
         private Task InitTask(HttpListenerContext context, CancellationToken cancellationToken)
@@ -185,11 +185,6 @@ namespace Emby.Server.Implementations.HttpServer.SocketSharp
 
             if (_listener != null)
             {
-                foreach (var prefix in _listener.Prefixes.ToList())
-                {
-                    _listener.Prefixes.Remove(prefix);
-                }
-
                 _listener.Close();
             }
 

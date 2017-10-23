@@ -26,21 +26,16 @@ namespace MediaBrowser.Controller.Drawing
         /// <value>The image enhancers.</value>
         IImageEnhancer[] ImageEnhancers { get; }
 
+        ImageSize GetImageSize(string path);
+
         /// <summary>
         /// Gets the size of the image.
         /// </summary>
         /// <param name="info">The information.</param>
         /// <returns>ImageSize.</returns>
-        ImageSize GetImageSize(ItemImageInfo info);
+        ImageSize GetImageSize(BaseItem item, ItemImageInfo info);
 
-        ImageSize GetImageSize(ItemImageInfo info, bool allowSlowMethods);
-
-        /// <summary>
-        /// Gets the size of the image.
-        /// </summary>
-        /// <param name="path">The path.</param>
-        /// <returns>ImageSize.</returns>
-        ImageSize GetImageSize(string path);
+        ImageSize GetImageSize(BaseItem item, ItemImageInfo info, bool allowSlowMethods, bool updateItem);
 
         /// <summary>
         /// Adds the parts.
@@ -116,8 +111,6 @@ namespace MediaBrowser.Controller.Drawing
         bool SupportsImageCollageCreation { get; }
 
         IImageEncoder ImageEncoder { get; set; }
-
-        void SaveImageSize(string path, DateTime imageDateModified, ImageSize size);
 
         bool SupportsTransparency(string path);
     }

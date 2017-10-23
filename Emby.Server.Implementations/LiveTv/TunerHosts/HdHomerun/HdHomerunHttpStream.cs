@@ -19,39 +19,32 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts.HdHomerun
 {
     public class HdHomerunHttpStream : LiveStream, IDirectStreamProvider
     {
-        private readonly ILogger _logger;
         private readonly IHttpClient _httpClient;
         private readonly IServerApplicationHost _appHost;
 
-        private readonly CancellationTokenSource _liveStreamCancellationTokenSource = new CancellationTokenSource();
         private readonly TaskCompletionSource<bool> _liveStreamTaskCompletionSource = new TaskCompletionSource<bool>();
 
-        private readonly string _tempFilePath;
-
         public HdHomerunHttpStream(MediaSourceInfo mediaSource, string originalStreamId, IFileSystem fileSystem, IHttpClient httpClient, ILogger logger, IServerApplicationPaths appPaths, IServerApplicationHost appHost, IEnvironmentInfo environment)
-            : base(mediaSource, environment, fileSystem)
+            : base(mediaSource, environment, fileSystem, logger, appPaths)
         {
             _httpClient = httpClient;
-            _logger = logger;
             _appHost = appHost;
             OriginalStreamId = originalStreamId;
-
-            _tempFilePath = Path.Combine(appPaths.TranscodingTempPath, UniqueId + ".ts");
         }
 
-        protected override async Task OpenInternal(CancellationToken openCancellationToken)
+        protected override Task OpenInternal(CancellationToken openCancellationToken)
         {
-            _liveStreamCancellationTokenSource.Token.ThrowIfCancellationRequested();
+            LiveStreamCancellationTokenSource.Token.ThrowIfCancellationRequested();
 
             var mediaSource = OriginalMediaSource;
 
             var url = mediaSource.Path;
 
-            _logger.Info("Opening HDHR Live stream from {0}", url);
+            Logger.Info("Opening HDHR Live stream from {0}", url);
 
             var taskCompletionSource = new TaskCompletionSource<bool>();
 
-            StartStreaming(url, taskCompletionSource, _liveStreamCancellationTokenSource.Token);
+            StartStreaming(url, taskCompletionSource, LiveStreamCancellationTokenSource.Token);
 
             //OpenedMediaSource.Protocol = MediaProtocol.File;
             //OpenedMediaSource.Path = tempFile;
@@ -66,75 +59,62 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts.HdHomerun
             //OpenedMediaSource.SupportsDirectStream = true;
             //OpenedMediaSource.SupportsTranscoding = true;
 
-            await taskCompletionSource.Task.ConfigureAwait(false);
+            return taskCompletionSource.Task;
 
             //await Task.Delay(5000).ConfigureAwait(false);
         }
 
-        public override Task Close()
+        public override async Task Close()
         {
-            _logger.Info("Closing HDHR live stream");
-            _liveStreamCancellationTokenSource.Cancel();
+            Logger.Info("Closing HDHR live stream");
+            LiveStreamCancellationTokenSource.Cancel();
 
-            return _liveStreamTaskCompletionSource.Task;
+            await _liveStreamTaskCompletionSource.Task.ConfigureAwait(false);
+            await DeleteTempFile(TempFilePath).ConfigureAwait(false);
         }
 
         private Task StartStreaming(string url, TaskCompletionSource<bool> openTaskCompletionSource, CancellationToken cancellationToken)
         {
             return Task.Run(async () =>
             {
-                var isFirstAttempt = true;
-
-                while (!cancellationToken.IsCancellationRequested)
+                try
                 {
-                    try
+                    using (var response = await _httpClient.SendAsync(new HttpRequestOptions
                     {
-                        using (var response = await _httpClient.SendAsync(new HttpRequestOptions
+                        Url = url,
+                        CancellationToken = cancellationToken,
+                        BufferContent = false,
+
+                        // Increase a little bit
+                        TimeoutMs = 30000,
+
+                        EnableHttpCompression = false
+
+                    }, "GET").ConfigureAwait(false))
+                    {
+                        using (var stream = response.Content)
                         {
-                            Url = url,
-                            CancellationToken = cancellationToken,
-                            BufferContent = false,
+                            Logger.Info("Opened HDHR stream from {0}", url);
 
-                            // Increase a little bit
-                            TimeoutMs = 30000
+                            Logger.Info("Beginning multicastStream.CopyUntilCancelled");
 
-                        }, "GET").ConfigureAwait(false))
-                        {
-                            _logger.Info("Opened HDHR stream from {0}", url);
-
-                            if (!cancellationToken.IsCancellationRequested)
+                            FileSystem.CreateDirectory(FileSystem.GetDirectoryName(TempFilePath));
+                            using (var fileStream = FileSystem.GetFileStream(TempFilePath, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, FileOpenOptions.None))
                             {
-                                _logger.Info("Beginning multicastStream.CopyUntilCancelled");
-
-                                FileSystem.CreateDirectory(FileSystem.GetDirectoryName(_tempFilePath));
-                                using (var fileStream = FileSystem.GetFileStream(_tempFilePath, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, FileOpenOptions.None))
-                                {
-                                    StreamHelper.CopyTo(response.Content, fileStream, 81920, () => Resolve(openTaskCompletionSource), cancellationToken);
-                                }
+                                StreamHelper.CopyTo(stream, fileStream, 81920, () => Resolve(openTaskCompletionSource), cancellationToken);
                             }
                         }
                     }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        if (isFirstAttempt)
-                        {
-                            _logger.ErrorException("Error opening live stream:", ex);
-                            openTaskCompletionSource.TrySetException(ex);
-                            break;
-                        }
-
-                        _logger.ErrorException("Error copying live stream, will reopen", ex);
-                    }
-
-                    isFirstAttempt = false;
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    Logger.ErrorException("Error copying live stream.", ex);
                 }
 
                 _liveStreamTaskCompletionSource.TrySetResult(true);
-                //await DeleteTempFile(_tempFilePath).ConfigureAwait(false);
             });
         }
 
@@ -144,37 +124,6 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts.HdHomerun
             {
                 openTaskCompletionSource.TrySetResult(true);
             });
-        }
-
-        public Task CopyToAsync(Stream stream, CancellationToken cancellationToken)
-        {
-            return CopyFileTo(_tempFilePath, stream, cancellationToken);
-        }
-
-        protected async Task CopyFileTo(string path, Stream outputStream, CancellationToken cancellationToken)
-        {
-            long startPosition = -20000;
-
-            _logger.Info("Live stream starting position is {0} bytes", startPosition.ToString(CultureInfo.InvariantCulture));
-
-            var allowAsync = false;//Environment.OperatingSystem != MediaBrowser.Model.System.OperatingSystem.Windows;
-            // use non-async filestream along with read due to https://github.com/dotnet/corefx/issues/6039
-
-            using (var inputStream = (FileStream)GetInputStream(path, allowAsync))
-            {
-                if (startPosition > 0)
-                {
-                    inputStream.Seek(-20000, SeekOrigin.End);
-                }
-
-                while (!cancellationToken.IsCancellationRequested)
-                {
-                    StreamHelper.CopyTo(inputStream, outputStream, 81920, cancellationToken);
-
-                    //var position = fs.Position;
-                    //_logger.Debug("Streamed {0} bytes to position {1} from file {2}", bytesRead, position, path);
-                }
-            }
         }
     }
 }

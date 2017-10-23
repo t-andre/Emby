@@ -89,13 +89,13 @@ namespace MediaBrowser.Api
 
         private void SetWizardFinishValues(ServerConfiguration config)
         {
-            config.EnableStandaloneMusicKeys = true;
             config.EnableCaseSensitiveItemIds = true;
             config.SkipDeserializationForBasicTypes = true;
             config.EnableLocalizedGuids = true;
             config.EnableSimpleArtistDetection = true;
             config.EnableNormalizedItemByNameIds = true;
             config.DisableLiveTvChannelUserDataName = true;
+            config.EnableNewOmdbSupport = true;
         }
 
         public void Post(UpdateStartupConfiguration request)

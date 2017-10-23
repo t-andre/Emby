@@ -247,11 +247,6 @@ namespace Emby.Server.Implementations.Library
             }
         }
 
-        /// <summary>
-        /// The _season zero display name
-        /// </summary>
-        private string _seasonZeroDisplayName;
-
         private bool _wizardCompleted;
         /// <summary>
         /// Records the configuration values.
@@ -259,7 +254,6 @@ namespace Emby.Server.Implementations.Library
         /// <param name="configuration">The configuration.</param>
         private void RecordConfigurationValues(ServerConfiguration configuration)
         {
-            _seasonZeroDisplayName = configuration.SeasonZeroDisplayName;
             _wizardCompleted = configuration.IsStartupWizardCompleted;
         }
 
@@ -272,58 +266,13 @@ namespace Emby.Server.Implementations.Library
         {
             var config = ConfigurationManager.Configuration;
 
-            var newSeasonZeroName = ConfigurationManager.Configuration.SeasonZeroDisplayName;
-            var seasonZeroNameChanged = !string.Equals(_seasonZeroDisplayName, newSeasonZeroName, StringComparison.Ordinal);
             var wizardChanged = config.IsStartupWizardCompleted != _wizardCompleted;
 
             RecordConfigurationValues(config);
 
-            if (seasonZeroNameChanged || wizardChanged)
+            if (wizardChanged)
             {
                 _taskManager.CancelIfRunningAndQueue<RefreshMediaLibraryTask>();
-            }
-
-            if (seasonZeroNameChanged)
-            {
-                Task.Run(async () =>
-                {
-                    await UpdateSeasonZeroNames(newSeasonZeroName, CancellationToken.None).ConfigureAwait(false);
-
-                });
-            }
-        }
-
-        /// <summary>
-        /// Updates the season zero names.
-        /// </summary>
-        /// <param name="newName">The new name.</param>
-        /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>Task.</returns>
-        private async Task UpdateSeasonZeroNames(string newName, CancellationToken cancellationToken)
-        {
-            var seasons = GetItemList(new InternalItemsQuery
-            {
-                IncludeItemTypes = new[] { typeof(Season).Name },
-                Recursive = true,
-                IndexNumber = 0,
-                DtoOptions = new DtoOptions(true)
-
-            }).Cast<Season>()
-                .Where(i => !string.Equals(i.Name, newName, StringComparison.Ordinal))
-                .ToList();
-
-            foreach (var season in seasons)
-            {
-                season.Name = newName;
-
-                try
-                {
-                    await UpdateItem(season, ItemUpdateType.MetadataDownload, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.ErrorException("Error saving {0}", ex, season.Path);
-                }
             }
         }
 
@@ -386,7 +335,7 @@ namespace Emby.Server.Implementations.Library
                     item.Id);
             }
 
-            var parent = item.Parent;
+            var parent = item.IsOwnedItem ? item.GetOwner() : item.GetParent();
 
             var locationType = item.LocationType;
 
@@ -433,6 +382,14 @@ namespace Emby.Server.Implementations.Library
                             _fileSystem.DeleteFile(fileSystemInfo.FullName);
                         }
                     }
+                    catch (FileNotFoundException)
+                    {
+                        // may have already been deleted manually by user
+                    }
+                    catch (DirectoryNotFoundException)
+                    {
+                        // may have already been deleted manually by user
+                    }
                     catch (IOException)
                     {
                         if (isRequiredForDelete)
@@ -453,12 +410,28 @@ namespace Emby.Server.Implementations.Library
 
                 if (parent != null)
                 {
-                    await parent.ValidateChildren(new SimpleProgress<double>(), CancellationToken.None, new MetadataRefreshOptions(_fileSystem), false).ConfigureAwait(false);
+                    var parentFolder = parent as Folder;
+                    if (parentFolder != null)
+                    {
+                        await parentFolder.ValidateChildren(new SimpleProgress<double>(), CancellationToken.None, new MetadataRefreshOptions(_fileSystem), false).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await parent.RefreshMetadata(new MetadataRefreshOptions(_fileSystem), CancellationToken.None).ConfigureAwait(false);
+                    }
                 }
             }
             else if (parent != null)
             {
-                parent.RemoveChild(item);
+                var parentFolder = parent as Folder;
+                if (parentFolder != null)
+                {
+                    parentFolder.RemoveChild(item);
+                }
+                else
+                {
+                    await parent.RefreshMetadata(new MetadataRefreshOptions(_fileSystem), CancellationToken.None).ConfigureAwait(false);
+                }
             }
 
             ItemRepository.DeleteItem(item.Id, CancellationToken.None);
@@ -765,8 +738,7 @@ namespace Emby.Server.Implementations.Library
                     if (folder.ParentId != rootFolder.Id)
                     {
                         folder.ParentId = rootFolder.Id;
-                        var task = folder.UpdateToRepository(ItemUpdateType.MetadataImport, CancellationToken.None);
-                        Task.WaitAll(task);
+                        folder.UpdateToRepository(ItemUpdateType.MetadataImport, CancellationToken.None);
                     }
 
                     rootFolder.AddVirtualChild(folder);
@@ -1854,6 +1826,13 @@ namespace Emby.Server.Implementations.Library
             }
         }
 
+        public void UpdateImages(BaseItem item)
+        {
+            ItemRepository.SaveImages(item);
+
+            RegisterItem(item);
+        }
+
         /// <summary>
         /// Updates the item.
         /// </summary>
@@ -1861,12 +1840,12 @@ namespace Emby.Server.Implementations.Library
         /// <param name="updateReason">The update reason.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>Task.</returns>
-        public async Task UpdateItem(BaseItem item, ItemUpdateType updateReason, CancellationToken cancellationToken)
+        public void UpdateItem(BaseItem item, ItemUpdateType updateReason, CancellationToken cancellationToken)
         {
             var locationType = item.LocationType;
             if (locationType != LocationType.Remote && locationType != LocationType.Virtual)
             {
-                await _providerManagerFactory().SaveMetadata(item, updateReason).ConfigureAwait(false);
+                _providerManagerFactory().SaveMetadata(item, updateReason);
             }
 
             item.DateLastSaved = DateTime.UtcNow;
@@ -2080,7 +2059,7 @@ namespace Emby.Server.Implementations.Library
             return GetNamedView(user, name, null, viewType, sortName, cancellationToken);
         }
 
-        public async Task<UserView> GetNamedView(string name,
+        public UserView GetNamedView(string name,
             string viewType,
             string sortName,
             CancellationToken cancellationToken)
@@ -2127,7 +2106,7 @@ namespace Emby.Server.Implementations.Library
 
             if (refresh)
             {
-                await item.UpdateToRepository(ItemUpdateType.MetadataImport, CancellationToken.None).ConfigureAwait(false);
+                item.UpdateToRepository(ItemUpdateType.MetadataImport, CancellationToken.None);
                 _providerManagerFactory().QueueRefresh(item.Id, new MetadataRefreshOptions(_fileSystem)
                 {
                     // Not sure why this is necessary but need to figure it out
@@ -2268,7 +2247,7 @@ namespace Emby.Server.Implementations.Library
             return item;
         }
 
-        public async Task<UserView> GetNamedView(string name,
+        public UserView GetNamedView(string name,
             string parentId,
             string viewType,
             string sortName,
@@ -2321,7 +2300,7 @@ namespace Emby.Server.Implementations.Library
             if (!string.Equals(viewType, item.ViewType, StringComparison.OrdinalIgnoreCase))
             {
                 item.ViewType = viewType;
-                await item.UpdateToRepository(ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
+                item.UpdateToRepository(ItemUpdateType.MetadataEdit, cancellationToken);
             }
 
             var refresh = isNew || DateTime.UtcNow - item.DateLastRefreshed >= _viewRefreshInterval;
@@ -2604,8 +2583,11 @@ namespace Emby.Server.Implementations.Library
                     {
                         video = dbItem;
                     }
-
-                    video.ExtraType = ExtraType.Trailer;
+                    else
+                    {
+                        // item is new
+                        video.ExtraType = ExtraType.Trailer;
+                    }
                     video.TrailerTypes = new List<TrailerType> { TrailerType.LocalTrailer };
 
                     return video;
@@ -2846,14 +2828,7 @@ namespace Emby.Server.Implementations.Library
 
                     await _providerManagerFactory().SaveImage(item, url, image.Type, imageIndex, CancellationToken.None).ConfigureAwait(false);
 
-                    var newImage = item.GetImageInfo(image.Type, imageIndex);
-
-                    if (newImage != null)
-                    {
-                        newImage.IsPlaceholder = image.IsPlaceholder;
-                    }
-
-                    await item.UpdateToRepository(ItemUpdateType.ImageUpdate, CancellationToken.None).ConfigureAwait(false);
+                    item.UpdateToRepository(ItemUpdateType.ImageUpdate, CancellationToken.None);
 
                     return item.GetImageInfo(image.Type, imageIndex);
                 }
@@ -2869,7 +2844,7 @@ namespace Emby.Server.Implementations.Library
 
             // Remove this image to prevent it from retrying over and over
             item.RemoveImage(image);
-            await item.UpdateToRepository(ItemUpdateType.ImageUpdate, CancellationToken.None).ConfigureAwait(false);
+            item.UpdateToRepository(ItemUpdateType.ImageUpdate, CancellationToken.None);
 
             throw new InvalidOperationException();
         }

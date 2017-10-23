@@ -7,22 +7,42 @@ using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Social;
 using SQLitePCL.pretty;
 using MediaBrowser.Model.Extensions;
+using MediaBrowser.Model.IO;
 
 namespace Emby.Server.Implementations.Social
 {
     public class SharingRepository : BaseSqliteRepository, ISharingRepository
     {
-        public SharingRepository(ILogger logger, IApplicationPaths appPaths)
+        protected IFileSystem FileSystem { get; private set; }
+
+        public SharingRepository(ILogger logger, IApplicationPaths appPaths, IFileSystem fileSystem)
             : base(logger)
         {
+            FileSystem = fileSystem;
             DbFilePath = Path.Combine(appPaths.DataPath, "shares.db");
+        }
+
+        public void Initialize()
+        {
+            try
+            {
+                InitializeInternal();
+            }
+            catch (Exception ex)
+            {
+                Logger.ErrorException("Error loading database file. Will reset and retry.", ex);
+
+                FileSystem.DeleteFile(DbFilePath);
+
+                InitializeInternal();
+            }
         }
 
         /// <summary>
         /// Opens the connection to the database
         /// </summary>
         /// <returns>Task.</returns>
-        public void Initialize()
+        private void InitializeInternal()
         {
             using (var connection = CreateConnection())
             {
@@ -30,7 +50,7 @@ namespace Emby.Server.Implementations.Social
 
                 string[] queries = {
 
-                                "create table if not exists Shares (Id GUID, ItemId TEXT, UserId TEXT, ExpirationDate DateTime, PRIMARY KEY (Id))",
+                                "create table if not exists Shares (Id GUID NOT NULL, ItemId TEXT NOT NULL, UserId TEXT NOT NULL, ExpirationDate DateTime NOT NULL, PRIMARY KEY (Id))",
                                 "create index if not exists idx_Shares on Shares(Id)",
 
                                 "pragma shrink_memory"

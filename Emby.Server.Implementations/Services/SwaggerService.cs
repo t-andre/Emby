@@ -21,8 +21,21 @@ namespace Emby.Server.Implementations.Services
         public string host { get; set; }
         public string basePath { get; set; }
         public SwaggerTag[] tags { get; set; }
-        public Dictionary<string, Dictionary<string, SwaggerMethod>> paths { get; set; }
+        public IDictionary<string, Dictionary<string, SwaggerMethod>> paths { get; set; }
         public Dictionary<string, SwaggerDefinition> definitions { get; set; }
+        public SwaggerComponents components { get; set; }
+    }
+
+    public class SwaggerComponents
+    {
+        public Dictionary<string, SwaggerSecurityScheme> securitySchemes { get; set; }
+    }
+
+    public class SwaggerSecurityScheme
+    {
+        public string name { get; set; }
+        public string type { get; set; }
+        public string @in { get; set; }
     }
 
     public class SwaggerInfo
@@ -38,6 +51,8 @@ namespace Emby.Server.Implementations.Services
     public class SwaggerConcactInfo
     {
         public string email { get; set; }
+        public string name { get; set; }
+        public string url { get; set; }
     }
 
     public class SwaggerTag
@@ -56,6 +71,7 @@ namespace Emby.Server.Implementations.Services
         public string[] produces { get; set; }
         public SwaggerParam[] parameters { get; set; }
         public Dictionary<string, SwaggerResponse> responses { get; set; }
+        public Dictionary<string, string[]>[] security { get; set; }
     }
 
     public class SwaggerParam
@@ -111,6 +127,15 @@ namespace Emby.Server.Implementations.Services
                 host = uri.Host;
             }
 
+            var securitySchemes = new Dictionary<string, SwaggerSecurityScheme>();
+
+            securitySchemes["api_key"] = new SwaggerSecurityScheme
+            {
+                name = "api_key",
+                type = "apiKey",
+                @in = "query"
+            };
+
             var spec = new SwaggerSpec
             {
                 schemes = new[] { "http" },
@@ -123,14 +148,20 @@ namespace Emby.Server.Implementations.Services
                     description = "Explore the Emby Server API",
                     contact = new SwaggerConcactInfo
                     {
-                        email = "api@emby.media"
+                        name = "Emby Developer Community",
+                        url = "https://emby.media/community/index.php?/forum/47-developer-api"
                     },
                     termsOfService = "https://emby.media/terms"
                 },
                 paths = GetPaths(),
                 definitions = GetDefinitions(),
                 basePath = "/emby",
-                host = host
+                host = host,
+
+                components = new SwaggerComponents
+                {
+                    securitySchemes = securitySchemes
+                }
             };
 
             return spec;
@@ -147,16 +178,21 @@ namespace Emby.Server.Implementations.Services
             return new Dictionary<string, SwaggerDefinition>();
         }
 
-        private Dictionary<string, Dictionary<string, SwaggerMethod>> GetPaths()
+        private IDictionary<string, Dictionary<string, SwaggerMethod>> GetPaths()
         {
-            var paths = new Dictionary<string, Dictionary<string, SwaggerMethod>>();
+            var paths = new SortedDictionary<string, Dictionary<string, SwaggerMethod>>();
 
-            var all = ServiceController.Instance.RestPathMap.ToList();
+            var all = ServiceController.Instance.RestPathMap.OrderBy(i => i.Key, StringComparer.OrdinalIgnoreCase).ToList();
 
             foreach (var current in all)
             {
                 foreach (var info in current.Value)
                 {
+                    if (info.IsHidden)
+                    {
+                        continue;
+                    }
+
                     if (info.Path.StartsWith("/mediabrowser", StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
@@ -188,9 +224,17 @@ namespace Emby.Server.Implementations.Services
                     description = "OK"
                 };
 
+                var security = new List<Dictionary<string, string[]>>();
+
+                var apiKeySecurity = new Dictionary<string, string[]>();
+                apiKeySecurity["api_key"] = new string[] { };
+
+                security.Add(apiKeySecurity);
+
                 result[verb.ToLower()] = new SwaggerMethod
                 {
                     summary = info.Summary,
+                    description = info.Description,
                     produces = new[]
                     {
                         "application/json"
@@ -204,7 +248,9 @@ namespace Emby.Server.Implementations.Services
 
                     parameters = new SwaggerParam[] { },
 
-                    responses = responses
+                    responses = responses,
+
+                    security = security.ToArray()
                 };
             }
 

@@ -100,20 +100,7 @@ namespace MediaBrowser.Controller.LiveTv
 
         public override double? GetDefaultPrimaryImageAspectRatio()
         {
-            if (IsMovie)
-            {
-                double value = 2;
-                value /= 3;
-
-                return value;
-            }
-            else
-            {
-                double value = 2;
-                value /= 3;
-
-                return value;
-            }
+            return LiveTvProgram.GetDefaultPrimaryImageAspectRatio(this);
         }
 
         [IgnoreDataMember]
@@ -144,7 +131,7 @@ namespace MediaBrowser.Controller.LiveTv
             return true;
         }
 
-        public override bool IsAuthorizedToDelete(User user)
+        public override bool IsAuthorizedToDelete(User user, List<Folder> allCollectionFolders)
         {
             return user.Policy.EnableLiveTvManagement;
         }
@@ -172,11 +159,6 @@ namespace MediaBrowser.Controller.LiveTv
         public override Task Delete(DeleteOptions options)
         {
             return LiveTvManager.DeleteRecording(this);
-        }
-
-        public override Task OnFileDeleted()
-        {
-            return LiveTvManager.OnRecordingFileDeleted(this);
         }
     }
 }

@@ -75,11 +75,11 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts
             return Task.FromResult(list);
         }
 
-        protected override async Task<LiveStream> GetChannelStream(TunerHostInfo info, string channelId, string streamId, CancellationToken cancellationToken)
+        protected override async Task<ILiveStream> GetChannelStream(TunerHostInfo info, string channelId, string streamId, CancellationToken cancellationToken)
         {
             var sources = await GetChannelStreamMediaSources(info, channelId, cancellationToken).ConfigureAwait(false);
 
-            var liveStream = new LiveStream(sources.First(), _environment, FileSystem);
+            var liveStream = new LiveStream(sources.First(), _environment, FileSystem, Logger, Config.ApplicationPaths);
             return liveStream;
         }
 
@@ -93,13 +93,6 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts
 
         protected override async Task<List<MediaSourceInfo>> GetChannelStreamMediaSources(TunerHostInfo info, string channelId, CancellationToken cancellationToken)
         {
-            var channelIdPrefix = GetFullChannelIdPrefix(info);
-
-            if (!channelId.StartsWith(channelIdPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-
             var channels = await GetChannels(info, true, cancellationToken).ConfigureAwait(false);
             var channel = channels.FirstOrDefault(c => string.Equals(c.Id, channelId, StringComparison.OrdinalIgnoreCase));
             if (channel != null)
@@ -165,7 +158,6 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts
                 RequiresOpening = true,
                 RequiresClosing = true,
                 RequiresLooping = info.EnableStreamLooping,
-                EnableMpDecimate = info.EnableMpDecimate,
 
                 ReadAtNativeFramerate = false,
 

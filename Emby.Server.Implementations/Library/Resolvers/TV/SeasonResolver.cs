@@ -57,8 +57,8 @@ namespace Emby.Server.Implementations.Library.Resolvers.TV
                     var seasonNumber = season.IndexNumber.Value;
 
                     season.Name = seasonNumber == 0 ?
-                        _config.Configuration.SeasonZeroDisplayName :
-                        string.Format(_localization.GetLocalizedString("NameSeasonNumber"), seasonNumber.ToString(UsCulture));
+                        args.LibraryOptions.SeasonZeroDisplayName :
+                        string.Format(_localization.GetLocalizedString("NameSeasonNumber"), seasonNumber.ToString(UsCulture), args.GetLibraryOptions().PreferredMetadataLanguage);
                 }
 
                 return season;

@@ -97,7 +97,7 @@ namespace MediaBrowser.Controller.Entities
         public string Tagline { get; set; }
 
         [IgnoreDataMember]
-        public ItemImageInfo[] ImageInfos { get; set; }
+        public virtual ItemImageInfo[] ImageInfos { get; set; }
 
         [IgnoreDataMember]
         public bool IsVirtualItem { get; set; }
@@ -216,6 +216,9 @@ namespace MediaBrowser.Controller.Entities
         [IgnoreDataMember]
         public Guid Id { get; set; }
 
+        [IgnoreDataMember]
+        public Guid OwnerId { get; set; }
+
         /// <summary>
         /// Gets or sets a value indicating whether this instance is hd.
         /// </summary>
@@ -321,10 +324,29 @@ namespace MediaBrowser.Controller.Entities
         {
             get
             {
+                if (OwnerId != Guid.Empty)
+                {
+                    return true;
+                }
+
+                // legacy 
+
                 // Local trailer, special feature, theme video, etc.
                 // An item that belongs to another item but is not part of the Parent-Child tree
-                return !IsFolder && ParentId == Guid.Empty && LocationType == LocationType.FileSystem;
+                // This is a hack for now relying on ExtraType. Eventually we may need to persist this
+                if (ParentId == Guid.Empty && !IsFolder && LocationType == LocationType.FileSystem)
+                {
+                    return true;
+                }
+
+                return false;
             }
+        }
+
+        public BaseItem GetOwner()
+        {
+            var ownerId = OwnerId;
+            return ownerId == Guid.Empty ? null : LibraryManager.GetItemById(ownerId);
         }
 
         /// <summary>
@@ -455,14 +477,36 @@ namespace MediaBrowser.Controller.Entities
                    locationType != LocationType.Virtual;
         }
 
-        public virtual bool IsAuthorizedToDelete(User user)
+        public virtual bool IsAuthorizedToDelete(User user, List<Folder> allCollectionFolders)
         {
-            return user.Policy.EnableContentDeletion;
+            if (user.Policy.EnableContentDeletion)
+            {
+                return true;
+            }
+
+            var allowed = user.Policy.EnableContentDeletionFromFolders;
+            var collectionFolders = LibraryManager.GetCollectionFolders(this, allCollectionFolders);
+
+            foreach (var folder in collectionFolders)
+            {
+                if (allowed.Contains(folder.Id.ToString("N"), StringComparer.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public bool CanDelete(User user, List<Folder> allCollectionFolders)
+        {
+            return CanDelete() && IsAuthorizedToDelete(user, allCollectionFolders);
         }
 
         public bool CanDelete(User user)
         {
-            return CanDelete() && IsAuthorizedToDelete(user);
+            var allCollectionFolders = LibraryManager.GetUserRootFolder().Children.OfType<Folder>().ToList();
+            return CanDelete(user, allCollectionFolders);
         }
 
         public virtual bool CanDownload()
@@ -727,17 +771,12 @@ namespace MediaBrowser.Controller.Entities
             ParentId = parent == null ? Guid.Empty : parent.Id;
         }
 
-        [IgnoreDataMember]
-        public IEnumerable<Folder> Parents
-        {
-            get { return GetParents().OfType<Folder>(); }
-        }
-
         public BaseItem GetParent()
         {
-            if (ParentId != Guid.Empty)
+            var parentId = ParentId;
+            if (parentId != Guid.Empty)
             {
-                return LibraryManager.GetItemById(ParentId);
+                return LibraryManager.GetItemById(parentId);
             }
 
             return null;
@@ -779,11 +818,13 @@ namespace MediaBrowser.Controller.Entities
         {
             get
             {
-                if (ParentId == Guid.Empty)
+                var parentId = ParentId;
+
+                if (parentId == Guid.Empty)
                 {
                     return null;
                 }
-                return ParentId;
+                return parentId;
             }
         }
 
@@ -918,9 +959,10 @@ namespace MediaBrowser.Controller.Entities
         {
             get
             {
-                if (!string.IsNullOrWhiteSpace(OfficialRating))
+                var officialRating = OfficialRating;
+                if (!string.IsNullOrWhiteSpace(officialRating))
                 {
-                    return OfficialRating;
+                    return officialRating;
                 }
 
                 var parent = DisplayParent;
@@ -938,9 +980,10 @@ namespace MediaBrowser.Controller.Entities
         {
             get
             {
-                if (!string.IsNullOrWhiteSpace(CustomRating))
+                var customRating = CustomRating;
+                if (!string.IsNullOrWhiteSpace(customRating))
                 {
-                    return CustomRating;
+                    return customRating;
                 }
 
                 var parent = DisplayParent;
@@ -1000,8 +1043,11 @@ namespace MediaBrowser.Controller.Entities
                     {
                         audio = dbItem;
                     }
-
-                    audio.ExtraType = MediaBrowser.Model.Entities.ExtraType.ThemeSong;
+                    else
+                    {
+                        // item is new
+                        audio.ExtraType = MediaBrowser.Model.Entities.ExtraType.ThemeSong;
+                    }
 
                     return audio;
 
@@ -1030,8 +1076,11 @@ namespace MediaBrowser.Controller.Entities
                     {
                         item = dbItem;
                     }
-
-                    item.ExtraType = MediaBrowser.Model.Entities.ExtraType.ThemeVideo;
+                    else
+                    {
+                        // item is new
+                        item.ExtraType = MediaBrowser.Model.Entities.ExtraType.ThemeVideo;
+                    }
 
                     return item;
 
@@ -1115,7 +1164,7 @@ namespace MediaBrowser.Controller.Entities
         [IgnoreDataMember]
         public virtual bool SupportsPeople
         {
-            get { return true; }
+            get { return false; }
         }
 
         [IgnoreDataMember]
@@ -1176,8 +1225,25 @@ namespace MediaBrowser.Controller.Entities
             var newItemIds = newItems.Select(i => i.Id).ToArray();
 
             var itemsChanged = !item.LocalTrailerIds.SequenceEqual(newItemIds);
+            var ownerId = item.Id;
 
-            var tasks = newItems.Select(i => RefreshMetadataForOwnedItem(i, true, options, cancellationToken));
+            var tasks = newItems.Select(i =>
+            {
+                var subOptions = new MetadataRefreshOptions(options);
+
+                if (!i.ExtraType.HasValue ||
+                    i.ExtraType.Value != Model.Entities.ExtraType.Trailer ||
+                    i.OwnerId != ownerId ||
+                    i.ParentId != Guid.Empty)
+                {
+                    i.ExtraType = Model.Entities.ExtraType.Trailer;
+                    i.OwnerId = ownerId;
+                    i.ParentId = Guid.Empty;
+                    subOptions.ForceSave = true;
+                }
+
+                return RefreshMetadataForOwnedItem(i, true, subOptions, cancellationToken);
+            });
 
             await Task.WhenAll(tasks).ConfigureAwait(false);
 
@@ -1194,13 +1260,20 @@ namespace MediaBrowser.Controller.Entities
 
             var themeVideosChanged = !item.ThemeVideoIds.SequenceEqual(newThemeVideoIds);
 
+            var ownerId = item.Id;
+
             var tasks = newThemeVideos.Select(i =>
             {
                 var subOptions = new MetadataRefreshOptions(options);
 
-                if (!i.IsThemeMedia)
+                if (!i.ExtraType.HasValue ||
+                    i.ExtraType.Value != Model.Entities.ExtraType.ThemeVideo ||
+                    i.OwnerId != ownerId ||
+                    i.ParentId != Guid.Empty)
                 {
-                    i.ExtraType = MediaBrowser.Model.Entities.ExtraType.ThemeVideo;
+                    i.ExtraType = Model.Entities.ExtraType.ThemeVideo;
+                    i.OwnerId = ownerId;
+                    i.ParentId = Guid.Empty;
                     subOptions.ForceSave = true;
                 }
 
@@ -1224,13 +1297,20 @@ namespace MediaBrowser.Controller.Entities
 
             var themeSongsChanged = !item.ThemeSongIds.SequenceEqual(newThemeSongIds);
 
+            var ownerId = item.Id;
+
             var tasks = newThemeSongs.Select(i =>
             {
                 var subOptions = new MetadataRefreshOptions(options);
 
-                if (!i.IsThemeMedia)
+                if (!i.ExtraType.HasValue ||
+                    i.ExtraType.Value != Model.Entities.ExtraType.ThemeSong ||
+                    i.OwnerId != ownerId ||
+                    i.ParentId != Guid.Empty)
                 {
-                    i.ExtraType = MediaBrowser.Model.Entities.ExtraType.ThemeSong;
+                    i.ExtraType = Model.Entities.ExtraType.ThemeSong;
+                    i.OwnerId = ownerId;
+                    i.ParentId = Guid.Empty;
                     subOptions.ForceSave = true;
                 }
 
@@ -1298,14 +1378,20 @@ namespace MediaBrowser.Controller.Entities
 
         internal virtual bool IsValidFromResolver(BaseItem newItem)
         {
-            var current = this;
+            return true;
+        }
 
-            if (current.IsInMixedFolder != newItem.IsInMixedFolder)
+        internal virtual ItemUpdateType UpdateFromResolvedItem(BaseItem newItem)
+        {
+            var updateType = ItemUpdateType.None;
+
+            if (IsInMixedFolder != newItem.IsInMixedFolder)
             {
-                return false;
+                IsInMixedFolder = newItem.IsInMixedFolder;
+                updateType |= ItemUpdateType.MetadataImport;
             }
 
-            return true;
+            return updateType;
         }
 
         public void AfterMetadataRefresh()
@@ -1866,7 +1952,8 @@ namespace MediaBrowser.Controller.Entities
             {
                 existingImage.Path = image.Path;
                 existingImage.DateModified = image.DateModified;
-                existingImage.IsPlaceholder = image.IsPlaceholder;
+                existingImage.Width = image.Width;
+                existingImage.Height = image.Height;
             }
 
             else
@@ -1900,7 +1987,6 @@ namespace MediaBrowser.Controller.Entities
 
                 image.Path = file.FullName;
                 image.DateModified = imageInfo.DateModified;
-                image.IsPlaceholder = false;
             }
         }
 
@@ -1910,14 +1996,14 @@ namespace MediaBrowser.Controller.Entities
         /// <param name="type">The type.</param>
         /// <param name="index">The index.</param>
         /// <returns>Task.</returns>
-        public Task DeleteImage(ImageType type, int index)
+        public void DeleteImage(ImageType type, int index)
         {
             var info = GetImageInfo(type, index);
 
             if (info == null)
             {
                 // Nothing to do
-                return Task.FromResult(true);
+                return;
             }
 
             // Remove it from the item
@@ -1928,7 +2014,7 @@ namespace MediaBrowser.Controller.Entities
                 FileSystem.DeleteFile(info.Path);
             }
 
-            return UpdateToRepository(ItemUpdateType.ImageUpdate, CancellationToken.None);
+            UpdateToRepository(ItemUpdateType.ImageUpdate, CancellationToken.None);
         }
 
         public void RemoveImage(ItemImageInfo image)
@@ -1941,9 +2027,9 @@ namespace MediaBrowser.Controller.Entities
             ImageInfos = ImageInfos.Except(deletedImages).ToArray();
         }
 
-        public virtual Task UpdateToRepository(ItemUpdateType updateReason, CancellationToken cancellationToken)
+        public virtual void UpdateToRepository(ItemUpdateType updateReason, CancellationToken cancellationToken)
         {
-            return LibraryManager.UpdateItem(this, updateReason, cancellationToken);
+            LibraryManager.UpdateItem(this, updateReason, cancellationToken);
         }
 
         /// <summary>
@@ -2153,7 +2239,7 @@ namespace MediaBrowser.Controller.Entities
             return type == ImageType.Backdrop || type == ImageType.Screenshot || type == ImageType.Chapter;
         }
 
-        public Task SwapImages(ImageType type, int index1, int index2)
+        public void SwapImages(ImageType type, int index1, int index2)
         {
             if (!AllowsMultipleImages(type))
             {
@@ -2166,13 +2252,13 @@ namespace MediaBrowser.Controller.Entities
             if (info1 == null || info2 == null)
             {
                 // Nothing to do
-                return Task.FromResult(true);
+                return;
             }
 
             if (!info1.IsLocalFile || !info2.IsLocalFile)
             {
                 // TODO: Not supported  yet
-                return Task.FromResult(true);
+                return;
             }
 
             var path1 = info1.Path;
@@ -2184,7 +2270,12 @@ namespace MediaBrowser.Controller.Entities
             info1.DateModified = FileSystem.GetLastWriteTimeUtc(info1.Path);
             info2.DateModified = FileSystem.GetLastWriteTimeUtc(info2.Path);
 
-            return UpdateToRepository(ItemUpdateType.ImageUpdate, CancellationToken.None);
+            info1.Width = 0;
+            info1.Height = 0;
+            info2.Width = 0;
+            info2.Height = 0;
+
+            UpdateToRepository(ItemUpdateType.ImageUpdate, CancellationToken.None);
         }
 
         public virtual bool IsPlayed(User user)
@@ -2357,6 +2448,14 @@ namespace MediaBrowser.Controller.Entities
                 newOptions.ForceSave = true;
             }
 
+            //var parentId = Id;
+            //if (!video.IsOwnedItem || video.ParentId != parentId)
+            //{
+            //    video.IsOwnedItem = true;
+            //    video.ParentId = parentId;
+            //    newOptions.ForceSave = true;
+            //}
+
             if (video == null)
             {
                 return Task.FromResult(true);
@@ -2462,15 +2561,6 @@ namespace MediaBrowser.Controller.Entities
             return LibraryManager.DeleteItem(this, options);
         }
 
-        public virtual Task OnFileDeleted()
-        {
-            // Remove from database
-            return Delete(new DeleteOptions
-            {
-                DeleteFileLocation = false
-            });
-        }
-
         public virtual List<ExternalUrl> GetRelatedUrls()
         {
             return new List<ExternalUrl>();
@@ -2479,6 +2569,22 @@ namespace MediaBrowser.Controller.Entities
         public virtual double? GetRefreshProgress()
         {
             return null;
+        }
+
+        public virtual ItemUpdateType OnMetadataChanged()
+        {
+            var updateType = ItemUpdateType.None;
+
+            var item = this;
+
+            var inheritedParentalRatingValue = item.GetInheritedParentalRatingValue() ?? 0;
+            if (inheritedParentalRatingValue != item.InheritedParentalRatingValue)
+            {
+                item.InheritedParentalRatingValue = inheritedParentalRatingValue;
+                updateType |= ItemUpdateType.MetadataImport;
+            }
+
+            return updateType;
         }
     }
 }

@@ -437,7 +437,7 @@ namespace Emby.Server.Implementations.Session
                     if (!string.IsNullOrEmpty(deviceId))
                     {
                         var userIdString = userId.HasValue ? userId.Value.ToString("N") : null;
-                        device = await _deviceManager.RegisterDevice(deviceId, deviceName, appName, appVersion, userIdString).ConfigureAwait(false);
+                        device = _deviceManager.RegisterDevice(deviceId, deviceName, appName, appVersion, userIdString);
                     }
                 }
 
@@ -446,7 +446,7 @@ namespace Emby.Server.Implementations.Session
                 if (device == null)
                 {
                     var userIdString = userId.HasValue ? userId.Value.ToString("N") : null;
-                    device = await _deviceManager.RegisterDevice(deviceId, deviceName, appName, appVersion, userIdString).ConfigureAwait(false);
+                    device = _deviceManager.RegisterDevice(deviceId, deviceName, appName, appVersion, userIdString);
                 }
 
                 if (device != null)
@@ -1406,17 +1406,25 @@ namespace Emby.Server.Implementations.Session
                     .FirstOrDefault(i => string.Equals(request.Username, i.Name, StringComparison.OrdinalIgnoreCase));
             }
 
-            if (user != null && !string.IsNullOrWhiteSpace(request.DeviceId))
+            if (user != null)
             {
-                if (!_deviceManager.CanAccessDevice(user.Id.ToString("N"), request.DeviceId))
+                if (!user.IsParentalScheduleAllowed())
                 {
-                    throw new SecurityException("User is not allowed access from this device.");
+                    throw new SecurityException("User is not allowed access at this time.");
+                }
+
+                if (!string.IsNullOrWhiteSpace(request.DeviceId))
+                {
+                    if (!_deviceManager.CanAccessDevice(user.Id.ToString("N"), request.DeviceId))
+                    {
+                        throw new SecurityException("User is not allowed access from this device.");
+                    }
                 }
             }
 
             if (enforcePassword)
             {
-                var result = await _userManager.AuthenticateUser(request.Username, request.PasswordSha1, request.PasswordMd5, request.RemoteEndPoint).ConfigureAwait(false);
+                var result = await _userManager.AuthenticateUser(request.Username, request.Password, request.PasswordSha1, request.PasswordMd5, request.RemoteEndPoint).ConfigureAwait(false);
 
                 if (result == null)
                 {
@@ -1559,7 +1567,7 @@ namespace Emby.Server.Implementations.Session
             ReportCapabilities(session, capabilities, true);
         }
 
-        private async void ReportCapabilities(SessionInfo session,
+        private void ReportCapabilities(SessionInfo session,
             ClientCapabilities capabilities,
             bool saveCapabilities)
         {
@@ -1585,7 +1593,7 @@ namespace Emby.Server.Implementations.Session
             {
                 try
                 {
-                    await SaveCapabilities(session.DeviceId, capabilities).ConfigureAwait(false);
+                    SaveCapabilities(session.DeviceId, capabilities);
                 }
                 catch (Exception ex)
                 {
@@ -1599,9 +1607,9 @@ namespace Emby.Server.Implementations.Session
             return _deviceManager.GetCapabilities(deviceId);
         }
 
-        private Task SaveCapabilities(string deviceId, ClientCapabilities capabilities)
+        private void SaveCapabilities(string deviceId, ClientCapabilities capabilities)
         {
-            return _deviceManager.SaveCapabilities(deviceId, capabilities);
+            _deviceManager.SaveCapabilities(deviceId, capabilities);
         }
 
         public SessionInfoDto GetSessionInfoDto(SessionInfo session)

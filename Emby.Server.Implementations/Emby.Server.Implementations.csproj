@@ -56,25 +56,7 @@
     <Compile Include="Collections\CollectionManager.cs" />
     <Compile Include="Collections\CollectionsDynamicFolder.cs" />
     <Compile Include="Configuration\ServerConfigurationManager.cs" />
-    <Compile Include="Cryptography\ASN1.cs" />
-    <Compile Include="Cryptography\ASN1Convert.cs" />
-    <Compile Include="Cryptography\BitConverterLE.cs" />
-    <Compile Include="Cryptography\CertificateGenerator.cs" />
-    <Compile Include="Cryptography\CryptoConvert.cs" />
     <Compile Include="Cryptography\CryptographyProvider.cs" />
-    <Compile Include="Cryptography\PfxGenerator.cs" />
-    <Compile Include="Cryptography\PKCS1.cs" />
-    <Compile Include="Cryptography\PKCS12.cs" />
-    <Compile Include="Cryptography\PKCS7.cs" />
-    <Compile Include="Cryptography\PKCS8.cs" />
-    <Compile Include="Cryptography\X501Name.cs" />
-    <Compile Include="Cryptography\X509Builder.cs" />
-    <Compile Include="Cryptography\X509Certificate.cs" />
-    <Compile Include="Cryptography\X509CertificateBuilder.cs" />
-    <Compile Include="Cryptography\X509CertificateCollection.cs" />
-    <Compile Include="Cryptography\X509Extension.cs" />
-    <Compile Include="Cryptography\X509Extensions.cs" />
-    <Compile Include="Cryptography\X520Attributes.cs" />
     <Compile Include="Data\ManagedConnection.cs" />
     <Compile Include="Data\SqliteDisplayPreferencesRepository.cs" />
     <Compile Include="Data\SqliteItemRepository.cs" />
@@ -85,7 +67,7 @@
     <Compile Include="Devices\CameraUploadsFolder.cs" />
     <Compile Include="Devices\DeviceId.cs" />
     <Compile Include="Devices\DeviceManager.cs" />
-    <Compile Include="Devices\DeviceRepository.cs" />
+    <Compile Include="Devices\SqliteDeviceRepository.cs" />
     <Compile Include="Diagnostics\CommonProcess.cs" />
     <Compile Include="Diagnostics\ProcessFactory.cs" />
     <Compile Include="Dto\DtoService.cs" />
@@ -425,10 +407,9 @@
     <Compile Include="LiveTv\TunerHosts\HdHomerun\HdHomerunHost.cs" />
     <Compile Include="LiveTv\TunerHosts\HdHomerun\HdHomerunHttpStream.cs" />
     <Compile Include="LiveTv\TunerHosts\HdHomerun\HdHomerunUdpStream.cs" />
+    <Compile Include="LiveTv\TunerHosts\LiveStream.cs" />
     <Compile Include="LiveTv\TunerHosts\M3uParser.cs" />
     <Compile Include="LiveTv\TunerHosts\M3UTunerHost.cs" />
-    <Compile Include="LiveTv\TunerHosts\MulticastStream.cs" />
-    <Compile Include="LiveTv\TunerHosts\QueueStream.cs" />
     <Compile Include="Localization\LocalizationManager.cs" />
     <Compile Include="Localization\TextLocalizer.cs" />
     <Compile Include="Logging\ConsoleLogger.cs" />
@@ -454,7 +435,6 @@
     <Compile Include="Data\BaseSqliteRepository.cs" />
     <Compile Include="Data\CleanDatabaseScheduledTask.cs" />
     <Compile Include="Data\SqliteExtensions.cs" />
-    <Compile Include="Photos\PhotoAlbumImageProvider.cs" />
     <Compile Include="Playlists\ManualPlaylistsFolder.cs" />
     <Compile Include="Playlists\PlaylistImageProvider.cs" />
     <Compile Include="Playlists\PlaylistManager.cs" />
@@ -592,6 +572,7 @@
     <Compile Include="Updates\InstallationManager.cs" />
     <Compile Include="UserViews\CollectionFolderImageProvider.cs" />
     <Compile Include="UserViews\DynamicImageProvider.cs" />
+    <Compile Include="UserViews\FolderImageProvider.cs" />
     <Compile Include="Xml\XmlReaderSettingsFactory.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -667,8 +648,8 @@
       <HintPath>..\packages\ServiceStack.Text.4.5.8\lib\net45\ServiceStack.Text.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="SharpCompress, Version=0.14.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\SharpCompress.0.14.0\lib\net45\SharpCompress.dll</HintPath>
+    <Reference Include="SharpCompress, Version=0.18.2.0, Culture=neutral, PublicKeyToken=afb0a02973931d96, processorArchitecture=MSIL">
+      <HintPath>..\packages\SharpCompress.0.18.2\lib\net45\SharpCompress.dll</HintPath>
     </Reference>
     <Reference Include="SimpleInjector, Version=4.0.8.0, Culture=neutral, PublicKeyToken=984cb50dea722e99, processorArchitecture=MSIL">
       <HintPath>..\packages\SimpleInjector.4.0.8\lib\net45\SimpleInjector.dll</HintPath>
@@ -694,46 +675,40 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Localization\countries.json" />
     <EmbeddedResource Include="Localization\Core\ar.json" />
     <EmbeddedResource Include="Localization\Core\bg-BG.json" />
     <EmbeddedResource Include="Localization\Core\ca.json" />
     <EmbeddedResource Include="Localization\Core\cs.json" />
     <EmbeddedResource Include="Localization\Core\da.json" />
     <EmbeddedResource Include="Localization\Core\de.json" />
-    <EmbeddedResource Include="Localization\Core\el.json" />
     <EmbeddedResource Include="Localization\Core\en-GB.json" />
-    <EmbeddedResource Include="Localization\Core\en-US.json" />
     <EmbeddedResource Include="Localization\Core\es-AR.json" />
     <EmbeddedResource Include="Localization\Core\es-MX.json" />
     <EmbeddedResource Include="Localization\Core\es.json" />
-    <EmbeddedResource Include="Localization\Core\fi.json" />
     <EmbeddedResource Include="Localization\Core\fr-CA.json" />
     <EmbeddedResource Include="Localization\Core\fr.json" />
-    <EmbeddedResource Include="Localization\Core\gsw.json" />
     <EmbeddedResource Include="Localization\Core\he.json" />
     <EmbeddedResource Include="Localization\Core\hr.json" />
     <EmbeddedResource Include="Localization\Core\hu.json" />
-    <EmbeddedResource Include="Localization\Core\id.json" />
     <EmbeddedResource Include="Localization\Core\it.json" />
     <EmbeddedResource Include="Localization\Core\kk.json" />
     <EmbeddedResource Include="Localization\Core\ko.json" />
+    <EmbeddedResource Include="Localization\Core\lt-LT.json" />
     <EmbeddedResource Include="Localization\Core\ms.json" />
     <EmbeddedResource Include="Localization\Core\nb.json" />
     <EmbeddedResource Include="Localization\Core\nl.json" />
     <EmbeddedResource Include="Localization\Core\pl.json" />
     <EmbeddedResource Include="Localization\Core\pt-BR.json" />
     <EmbeddedResource Include="Localization\Core\pt-PT.json" />
-    <EmbeddedResource Include="Localization\Core\ro.json" />
     <EmbeddedResource Include="Localization\Core\ru.json" />
+    <EmbeddedResource Include="Localization\Core\sk.json" />
     <EmbeddedResource Include="Localization\Core\sl-SI.json" />
     <EmbeddedResource Include="Localization\Core\sv.json" />
     <EmbeddedResource Include="Localization\Core\tr.json" />
-    <EmbeddedResource Include="Localization\Core\uk.json" />
-    <EmbeddedResource Include="Localization\Core\vi.json" />
     <EmbeddedResource Include="Localization\Core\zh-CN.json" />
     <EmbeddedResource Include="Localization\Core\zh-HK.json" />
-    <EmbeddedResource Include="Localization\Core\zh-TW.json" />
-    <EmbeddedResource Include="Localization\countries.json" />
+    <EmbeddedResource Include="Localization\Core\en-US.json" />
     <None Include="packages.config" />
     <None Include="TextEncoding\NLangDetect\Profiles\afr" />
     <None Include="TextEncoding\NLangDetect\Profiles\ara" />

@@ -124,24 +124,24 @@ namespace MediaBrowser.Api
             {
                 list.Add(new NameValuePair
                 {
-                    Name = "FolderTypeInherit",
+                    Name = "Inherit",
                     Value = ""
                 });
             }
 
             list.Add(new NameValuePair
             {
-                Name = "FolderTypeMovies",
+                Name = "Movies",
                 Value = "movies"
             });
             list.Add(new NameValuePair
             {
-                Name = "FolderTypeMusic",
+                Name = "Music",
                 Value = "music"
             });
             list.Add(new NameValuePair
             {
-                Name = "FolderTypeTvShows",
+                Name = "Shows",
                 Value = "tvshows"
             });
 
@@ -149,29 +149,29 @@ namespace MediaBrowser.Api
             {
                 list.Add(new NameValuePair
                 {
-                    Name = "FolderTypeBooks",
+                    Name = "Books",
                     Value = "books"
                 });
                 list.Add(new NameValuePair
                 {
-                    Name = "FolderTypeGames",
+                    Name = "Games",
                     Value = "games"
                 });
             }
 
             list.Add(new NameValuePair
             {
-                Name = "FolderTypeHomeVideos",
+                Name = "HomeVideos",
                 Value = "homevideos"
             });
             list.Add(new NameValuePair
             {
-                Name = "FolderTypeMusicVideos",
+                Name = "MusicVideos",
                 Value = "musicvideos"
             });
             list.Add(new NameValuePair
             {
-                Name = "FolderTypePhotos",
+                Name = "Photos",
                 Value = "photos"
             });
 
@@ -179,7 +179,7 @@ namespace MediaBrowser.Api
             {
                 list.Add(new NameValuePair
                 {
-                    Name = "FolderTypeMixed",
+                    Name = "MixedContent",
                     Value = ""
                 });
             }
@@ -194,13 +194,6 @@ namespace MediaBrowser.Api
 
         public void Post(UpdateItem request)
         {
-            var task = UpdateItem(request);
-
-            Task.WaitAll(task);
-        }
-
-        private async Task UpdateItem(UpdateItem request)
-        {
             var item = _libraryManager.GetItemById(request.ItemId);
 
             var newLockData = request.LockData ?? false;
@@ -214,7 +207,9 @@ namespace MediaBrowser.Api
 
             UpdateItem(request, item);
 
-            await item.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+            item.OnMetadataChanged();
+
+            item.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
 
             if (isLockedChanged && item.IsFolder)
             {
@@ -223,7 +218,7 @@ namespace MediaBrowser.Api
                 foreach (var child in folder.GetRecursiveChildren())
                 {
                     child.IsLocked = newLockData;
-                    await child.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
+                    child.UpdateToRepository(ItemUpdateType.MetadataEdit, CancellationToken.None);
                 }
             }
         }

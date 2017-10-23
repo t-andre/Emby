@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Providers;
+using MediaBrowser.Providers.MediaInfo;
 
 namespace MediaBrowser.Providers.Manager
 {
@@ -47,17 +48,45 @@ namespace MediaBrowser.Providers.Manager
 
             var libraryOptions = LibraryManager.GetLibraryOptions((BaseItem)item);
 
-            if (refreshOptions.MetadataRefreshMode != MetadataRefreshMode.None)
+            if (!requiresRefresh && libraryOptions.AutomaticRefreshIntervalDays > 0 && (DateTime.UtcNow - item.DateLastRefreshed).TotalDays >= libraryOptions.AutomaticRefreshIntervalDays)
+            {
+                requiresRefresh = true;
+            }
+
+            DateTime? newDateModified = null;
+            if (item.LocationType == LocationType.FileSystem)
+            {
+                var file = refreshOptions.DirectoryService.GetFile(item.Path);
+                if (file != null)
+                {
+                    newDateModified = file.LastWriteTimeUtc;
+                    if (item.EnableRefreshOnDateModifiedChange)
+                    {
+                        if (newDateModified != item.DateModified)
+                        {
+                            Logger.Debug("Date modified for {0}. Old date {1} new date {2} Id {3}", item.Path, item.DateModified, newDateModified, item.Id);
+                            requiresRefresh = true;
+                        }
+                    }
+
+                    if (!requiresRefresh && item.SupportsLocalMetadata)
+                    {
+                        var video = item as Video;
+
+                        if (video != null && !video.IsPlaceHolder)
+                        {
+                            requiresRefresh = !video.SubtitleFiles
+                                .SequenceEqual(SubtitleResolver.GetSubtitleFiles(video, refreshOptions.DirectoryService, FileSystem, false)
+                                .OrderBy(i => i), StringComparer.OrdinalIgnoreCase);
+                        }
+                    }
+                }
+            }
+
+            if (!requiresRefresh && refreshOptions.MetadataRefreshMode != MetadataRefreshMode.None)
             {
                 // TODO: If this returns true, should we instead just change metadata refresh mode to Full?
                 requiresRefresh = item.RequiresRefresh();
-            }
-
-            if (!requiresRefresh &&
-                libraryOptions.AutomaticRefreshIntervalDays > 0 &&
-                (DateTime.UtcNow - item.DateLastRefreshed).TotalDays >= libraryOptions.AutomaticRefreshIntervalDays)
-            {
-                requiresRefresh = true;
             }
 
             var itemImageProvider = new ItemImageProvider(Logger, ProviderManager, ServerConfigurationManager, FileSystem);
@@ -145,20 +174,9 @@ namespace MediaBrowser.Providers.Manager
             var beforeSaveResult = BeforeSave(itemOfType, isFirstRefresh || refreshOptions.ReplaceAllMetadata || refreshOptions.MetadataRefreshMode == MetadataRefreshMode.FullRefresh || requiresRefresh, updateType);
             updateType = updateType | beforeSaveResult;
 
-            if (item.LocationType == LocationType.FileSystem)
+            if (newDateModified.HasValue)
             {
-                var file = refreshOptions.DirectoryService.GetFile(item.Path);
-                if (file != null)
-                {
-                    var fileLastWriteTime = file.LastWriteTimeUtc;
-                    if (item.EnableRefreshOnDateModifiedChange && fileLastWriteTime != item.DateModified)
-                    {
-                        Logger.Debug("Date modified for {0}. Old date {1} new date {2} Id {3}", item.Path, item.DateModified, fileLastWriteTime, item.Id);
-                        requiresRefresh = true;
-                    }
-
-                    item.DateModified = fileLastWriteTime;
-                }
+                item.DateModified = newDateModified.Value;
             }
 
             // Save if changes were made, or it's never been saved before
@@ -204,7 +222,7 @@ namespace MediaBrowser.Providers.Manager
                 LibraryManager.UpdatePeople(baseItem, result.People);
                 await SavePeopleMetadata(result.People, libraryOptions, cancellationToken).ConfigureAwait(false);
             }
-            await result.Item.UpdateToRepository(reason, cancellationToken).ConfigureAwait(false);
+            result.Item.UpdateToRepository(reason, cancellationToken);
         }
 
         private async Task SavePeopleMetadata(List<PersonInfo> people, LibraryOptions libraryOptions, CancellationToken cancellationToken)
@@ -238,7 +256,7 @@ namespace MediaBrowser.Providers.Manager
 
                     if (saveEntity)
                     {
-                        await personEntity.UpdateToRepository(updateType, cancellationToken).ConfigureAwait(false);
+                        personEntity.UpdateToRepository(updateType, cancellationToken);
                     }
                 }
             }
@@ -262,8 +280,7 @@ namespace MediaBrowser.Providers.Manager
             personEntity.SetImage(new ItemImageInfo
             {
                 Path = imageUrl,
-                Type = ImageType.Primary,
-                IsPlaceholder = true
+                Type = ImageType.Primary
             }, 0);
         }
 
@@ -281,7 +298,16 @@ namespace MediaBrowser.Providers.Manager
         /// <param name="isFullRefresh">if set to <c>true</c> [is full refresh].</param>
         /// <param name="currentUpdateType">Type of the current update.</param>
         /// <returns>ItemUpdateType.</returns>
-        protected virtual ItemUpdateType BeforeSave(TItemType item, bool isFullRefresh, ItemUpdateType currentUpdateType)
+        private ItemUpdateType BeforeSave(TItemType item, bool isFullRefresh, ItemUpdateType currentUpdateType)
+        {
+            var updateType = BeforeSaveInternal(item, isFullRefresh, currentUpdateType);
+
+            updateType |= item.OnMetadataChanged();
+
+            return updateType;
+        }
+
+        protected virtual ItemUpdateType BeforeSaveInternal(TItemType item, bool isFullRefresh, ItemUpdateType currentUpdateType)
         {
             var updateType = ItemUpdateType.None;
 
@@ -292,13 +318,6 @@ namespace MediaBrowser.Providers.Manager
             if (!string.Equals(item.PresentationUniqueKey, presentationUniqueKey, StringComparison.Ordinal))
             {
                 item.PresentationUniqueKey = presentationUniqueKey;
-                updateType |= ItemUpdateType.MetadataImport;
-            }
-
-            var inheritedParentalRatingValue = item.GetInheritedParentalRatingValue() ?? 0;
-            if (inheritedParentalRatingValue != item.InheritedParentalRatingValue)
-            {
-                item.InheritedParentalRatingValue = inheritedParentalRatingValue;
                 updateType |= ItemUpdateType.MetadataImport;
             }
 
@@ -450,6 +469,11 @@ namespace MediaBrowser.Providers.Manager
         public bool CanRefresh(IHasMetadata item)
         {
             return item is TItemType;
+        }
+
+        public bool CanRefreshPrimary(Type type)
+        {
+            return type == typeof(TItemType);
         }
 
         protected virtual async Task<RefreshResult> RefreshWithProviders(MetadataResult<TItemType> metadata,
@@ -654,6 +678,8 @@ namespace MediaBrowser.Providers.Manager
 
                     if (result.HasMetadata)
                     {
+                        result.Provider = provider.Name;
+
                         results.Add(result);
 
                         refreshResult.UpdateType = refreshResult.UpdateType | ItemUpdateType.MetadataDownload;

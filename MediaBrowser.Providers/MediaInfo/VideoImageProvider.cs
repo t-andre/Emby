@@ -16,7 +16,7 @@ using System.Threading.Tasks;
 
 namespace MediaBrowser.Providers.MediaInfo
 {
-    public class VideoImageProvider : IDynamicImageProvider, IHasItemChangeMonitor, IHasOrder
+    public class VideoImageProvider : IDynamicImageProvider, IHasOrder
     {
         private readonly IMediaEncoder _mediaEncoder;
         private readonly ILogger _logger;
@@ -133,7 +133,7 @@ namespace MediaBrowser.Providers.MediaInfo
         {
             var video = item as Video;
 
-            if (item.LocationType == LocationType.FileSystem && video != null && !video.IsPlaceHolder && !video.IsShortcut)
+            if (item.LocationType == LocationType.FileSystem && video != null && !video.IsPlaceHolder && !video.IsShortcut && video.IsCompleteMedia)
             {
                 return true;
             }
@@ -148,20 +148,6 @@ namespace MediaBrowser.Providers.MediaInfo
                 // Make sure this comes after internet image providers
                 return 100;
             }
-        }
-
-        public bool HasChanged(IHasMetadata item, IDirectoryService directoryService)
-        {
-            if (item.EnableRefreshOnDateModifiedChange && !string.IsNullOrWhiteSpace(item.Path) && item.LocationType == LocationType.FileSystem)
-            {
-                var file = directoryService.GetFile(item.Path);
-                if (file != null && file.LastWriteTimeUtc != item.DateModified)
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
     }
 }

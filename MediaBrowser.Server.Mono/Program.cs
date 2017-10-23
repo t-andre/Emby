@@ -12,8 +12,6 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Emby.Drawing;
-using Emby.Server.Core.Cryptography;
-using Emby.Server.Core;
 using Emby.Server.Implementations;
 using Emby.Server.Implementations.EnvironmentInfo;
 using Emby.Server.Implementations.IO;
@@ -127,9 +125,9 @@ namespace MediaBrowser.Server.Mono
 
                 var task = appHost.Init(initProgress);
 
-                appHost.ImageProcessor.ImageEncoder = ImageEncoderHelper.GetImageEncoder(_logger, logManager, fileSystem, options, () => appHost.HttpClient, appPaths, environmentInfo);
-
                 Task.WaitAll(task);
+
+                appHost.ImageProcessor.ImageEncoder = ImageEncoderHelper.GetImageEncoder(_logger, logManager, fileSystem, options, () => appHost.HttpClient, appPaths, environmentInfo);
 
                 Console.WriteLine("Running startup tasks");
 
