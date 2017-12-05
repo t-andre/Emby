@@ -393,6 +393,10 @@ namespace MediaBrowser.Controller.MediaEncoding
             {
                 return "wmav2";
             }
+            if (string.Equals(codec, "opus", StringComparison.OrdinalIgnoreCase))
+            {
+                return "libopus";
+            }
 
             return codec.ToLower();
         }
@@ -1325,6 +1329,8 @@ namespace MediaBrowser.Controller.MediaEncoding
             if (state.VideoStream != null && state.VideoStream.Width.HasValue && state.VideoStream.Height.HasValue)
             {
                 videoSizeParam = string.Format("scale={0}:{1}", state.VideoStream.Width.Value.ToString(_usCulture), state.VideoStream.Height.Value.ToString(_usCulture));
+
+                videoSizeParam += ":force_original_aspect_ratio=decrease";
             }
 
             var mapPrefix = state.SubtitleStream.IsExternal ?
@@ -1335,7 +1341,7 @@ namespace MediaBrowser.Controller.MediaEncoding
                 ? 0
                 : state.SubtitleStream.Index;
 
-            return string.Format(" -filter_complex \"[{0}:{1}]{4}[sub] ; [0:{2}] [sub] overlay{3}\"",
+            return string.Format(" -filter_complex \"[{0}:{1}]{4}[sub];[0:{2}][sub]overlay{3}\"",
                 mapPrefix.ToString(_usCulture),
                 subtitleStreamIndex.ToString(_usCulture),
                 state.VideoStream.Index.ToString(_usCulture),
@@ -2094,17 +2100,17 @@ namespace MediaBrowser.Controller.MediaEncoding
                     args += " -avoid_negative_ts disabled -start_at_zero";
                 }
 
+                // This is for internal graphical subs
+                if (hasGraphicalSubs)
+                {
+                    args += GetGraphicalSubtitleParam(state, encodingOptions, videoCodec);
+                }
+
                 var qualityParam = GetVideoQualityParam(state, videoCodec, encodingOptions, defaultH264Preset);
 
                 if (!string.IsNullOrEmpty(qualityParam))
                 {
                     args += " " + qualityParam.Trim();
-                }
-
-                // This is for internal graphical subs
-                if (hasGraphicalSubs)
-                {
-                    args += GetGraphicalSubtitleParam(state, encodingOptions, videoCodec);
                 }
 
                 if (!state.RunTimeTicks.HasValue)

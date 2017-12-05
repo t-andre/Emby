@@ -1052,10 +1052,27 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
             {
                 _liveStreamsSemaphore.Release();
             }
-
         }
 
-        private async Task<Tuple<ILiveStream, MediaSourceInfo, ITunerHost>> GetChannelStreamInternal(string channelId, string streamId, CancellationToken cancellationToken)
+        public async Task<List<ILiveStream>> GetLiveStreams(TunerHostInfo host, CancellationToken cancellationToken)
+        {
+            //await _liveStreamsSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            //try
+            //{
+            var hostId = host.Id;
+
+            return _liveStreams
+                .Where(i => string.Equals(i.TunerHostId, hostId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            //}
+            //finally
+            //{
+            //    _liveStreamsSemaphore.Release();
+            //}
+        }
+
+        private async Task<Tuple<ILiveStream, MediaSourceInfo>> GetChannelStreamInternal(string channelId, string streamId, CancellationToken cancellationToken)
         {
             _logger.Info("Streaming Channel " + channelId);
 
@@ -1072,7 +1089,7 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
 
                     _logger.Info("Live stream {0} consumer count is now {1}", streamId, result.ConsumerCount);
 
-                    return new Tuple<ILiveStream, MediaSourceInfo, ITunerHost>(result, openedMediaSource, result.TunerHost);
+                    return new Tuple<ILiveStream, MediaSourceInfo>(result, openedMediaSource);
                 }
 
                 foreach (var hostInstance in _liveTvManager.TunerHosts)
@@ -1086,13 +1103,12 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                         result.SharedStreamIds.Add(openedMediaSource.Id);
                         _liveStreams.Add(result);
 
-                        result.TunerHost = hostInstance;
                         result.OriginalStreamId = streamId;
 
                         _logger.Info("Returning mediasource streamId {0}, mediaSource.Id {1}, mediaSource.LiveStreamId {2}",
                             streamId, openedMediaSource.Id, openedMediaSource.LiveStreamId);
 
-                        return new Tuple<ILiveStream, MediaSourceInfo, ITunerHost>(result, openedMediaSource, hostInstance);
+                        return new Tuple<ILiveStream, MediaSourceInfo>(result, openedMediaSource);
                     }
                     catch (FileNotFoundException)
                     {
@@ -1496,6 +1512,8 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                 }
             }
 
+            DeleteFileIfEmpty(recordPath);
+
             TriggerRefresh(recordPath);
             _libraryMonitor.ReportFileSystemChangeComplete(recordPath, false);
 
@@ -1523,6 +1541,23 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
             else
             {
                 _timerProvider.Delete(timer);
+            }
+        }
+
+        private void DeleteFileIfEmpty(string path)
+        {
+            var file = _fileSystem.GetFileInfo(path);
+
+            if (file.Exists && file.Length == 0)
+            {
+                try
+                {
+                    _fileSystem.DeleteFile(path);
+                }
+                catch (Exception ex)
+                {
+                    _logger.ErrorException("Error deleting 0-byte failed recording file {0}", ex, path);
+                }
             }
         }
 
@@ -1881,7 +1916,15 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                     imageSaveFilenameWithoutExtension = "logo";
                     break;
                 case ImageType.Thumb:
-                    imageSaveFilenameWithoutExtension = "landscape";
+                    if (program.IsSeries)
+                    {
+                        imageSaveFilenameWithoutExtension = Path.GetFileNameWithoutExtension(recordingPath) + "-thumb";
+                    }
+                    else
+                    {
+                        imageSaveFilenameWithoutExtension = "landscape";
+                    }
+
                     break;
                 case ImageType.Backdrop:
                     imageSaveFilenameWithoutExtension = "fanart";
@@ -1905,9 +1948,11 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
 
         private async Task SaveRecordingImages(string recordingPath, LiveTvProgram program)
         {
-            var image = program.GetImageInfo(ImageType.Primary, 0);
+            var image = program.IsSeries ?
+                (program.GetImageInfo(ImageType.Thumb, 0) ?? program.GetImageInfo(ImageType.Primary, 0)) :
+                (program.GetImageInfo(ImageType.Primary, 0) ?? program.GetImageInfo(ImageType.Thumb, 0));
 
-            if (image != null && program.IsMovie)
+            if (image != null)
             {
                 try
                 {
@@ -2444,6 +2489,10 @@ namespace Emby.Server.Implementations.LiveTv.EmbyTV
                             if (ShouldCancelTimerForSeriesTimer(seriesTimer, timer))
                             {
                                 existingTimer.Status = RecordingStatus.Cancelled;
+                            }
+                            else if (!existingTimer.IsManual)
+                            {
+                                existingTimer.Status = RecordingStatus.New;
                             }
 
                             if (existingTimer.Status != RecordingStatus.Cancelled)

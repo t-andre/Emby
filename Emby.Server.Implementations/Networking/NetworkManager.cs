@@ -17,11 +17,54 @@ namespace Emby.Server.Implementations.Networking
     public class NetworkManager : INetworkManager
     {
         protected ILogger Logger { get; private set; }
-        private DateTime _lastRefresh;
+
+        public event EventHandler NetworkChanged;
 
         public NetworkManager(ILogger logger)
         {
             Logger = logger;
+
+            try
+            {
+                NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
+            }
+            catch (Exception ex)
+            {
+                Logger.ErrorException("Error binding to NetworkAddressChanged event", ex);
+            }
+
+            try
+            {
+                NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAvailabilityChanged;
+            }
+            catch (Exception ex)
+            {
+                Logger.ErrorException("Error binding to NetworkChange_NetworkAvailabilityChanged event", ex);
+            }
+        }
+
+        private void NetworkChange_NetworkAvailabilityChanged(object sender, NetworkAvailabilityEventArgs e)
+        {
+            Logger.Debug("NetworkAvailabilityChanged");
+            OnNetworkChanged();
+        }
+
+        private void NetworkChange_NetworkAddressChanged(object sender, EventArgs e)
+        {
+            Logger.Debug("NetworkAddressChanged");
+            OnNetworkChanged();
+        }
+
+        private void OnNetworkChanged()
+        {
+            lock (_localIpAddressSyncLock)
+            {
+                _localIpAddresses = null;
+            }
+            if (NetworkChanged != null)
+            {
+                NetworkChanged(this, EventArgs.Empty);
+            }
         }
 
         private List<IpAddressInfo> _localIpAddresses;
@@ -29,37 +72,38 @@ namespace Emby.Server.Implementations.Networking
 
         public List<IpAddressInfo> GetLocalIpAddresses()
         {
-            const int cacheMinutes = 10;
-
             lock (_localIpAddressSyncLock)
             {
-                var forceRefresh = (DateTime.UtcNow - _lastRefresh).TotalMinutes >= cacheMinutes;
-
-                if (_localIpAddresses == null || forceRefresh)
+                if (_localIpAddresses == null)
                 {
-                    var addresses = GetLocalIpAddressesInternal().Select(ToIpAddressInfo).ToList();
+                    var addresses = GetLocalIpAddressesInternal().Result.Select(ToIpAddressInfo).ToList();
 
                     _localIpAddresses = addresses;
-                    _lastRefresh = DateTime.UtcNow;
 
                     return addresses;
                 }
+                return _localIpAddresses;
             }
-
-            return _localIpAddresses;
         }
 
-        private IEnumerable<IPAddress> GetLocalIpAddressesInternal()
+        private async Task<List<IPAddress>> GetLocalIpAddressesInternal()
         {
             var list = GetIPsDefault()
                 .ToList();
 
             if (list.Count == 0)
             {
-                list.AddRange(GetLocalIpAddressesFallback().Result);
+                list.AddRange(await GetLocalIpAddressesFallback().ConfigureAwait(false));
             }
 
-            return list.Where(FilterIpAddress).DistinctBy(i => i.ToString());
+            var listClone = list.ToList();
+
+            return list
+                .OrderBy(i => i.AddressFamily == AddressFamily.InterNetwork ? 0 : 1)
+                .ThenBy(i => listClone.IndexOf(i))
+                .Where(FilterIpAddress)
+                .DistinctBy(i => i.ToString())
+                .ToList();
         }
 
         private bool FilterIpAddress(IPAddress address)
@@ -103,54 +147,53 @@ namespace Emby.Server.Implementations.Networking
             }
 
             return endpoint.StartsWith("localhost", StringComparison.OrdinalIgnoreCase) ||
-                endpoint.StartsWith("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+                endpoint.StartsWith("127.", StringComparison.OrdinalIgnoreCase) ||
+                endpoint.StartsWith("192.168", StringComparison.OrdinalIgnoreCase) ||
+                endpoint.StartsWith("169.", StringComparison.OrdinalIgnoreCase) ||
+                //endpoint.StartsWith("10.", StringComparison.OrdinalIgnoreCase) ||
                 IsInPrivateAddressSpaceAndLocalSubnet(endpoint);
         }
 
         public bool IsInPrivateAddressSpaceAndLocalSubnet(string endpoint)
         {
-            var endpointFirstPart = endpoint.Split('.')[0];
-
-            string subnet_Match = "";
-            if (
-                endpoint.StartsWith("127.", StringComparison.OrdinalIgnoreCase) ||
-                endpoint.StartsWith("10.", StringComparison.OrdinalIgnoreCase) ||
-                endpoint.StartsWith("192.168", StringComparison.OrdinalIgnoreCase) ||
-                endpoint.StartsWith("169.", StringComparison.OrdinalIgnoreCase)
-                )
+            if (endpoint.StartsWith("10.", StringComparison.OrdinalIgnoreCase))
             {
-                foreach (NetworkInterface adapter in NetworkInterface.GetAllNetworkInterfaces())
-                    foreach (UnicastIPAddressInformation unicastIPAddressInformation in adapter.GetIPProperties().UnicastAddresses)
-                        if (unicastIPAddressInformation.Address.AddressFamily == AddressFamily.InterNetwork && endpointFirstPart == unicastIPAddressInformation.Address.ToString().Split('.')[0])
-                        {
-                            int subnet_Test = 0;
-                            foreach (string part in unicastIPAddressInformation.IPv4Mask.ToString().Split('.'))
-                            {
-                                if (part.Equals("0")) break;
-                                subnet_Test++;
-                            }
+                var endpointFirstPart = endpoint.Split('.')[0];
 
-                            subnet_Match = String.Join(".", unicastIPAddressInformation.Address.ToString().Split('.').Take(subnet_Test).ToArray());
-                        }
+                var subnets = GetSubnets(endpointFirstPart);
+
+                foreach (var subnet_Match in subnets)
+                {
+                    //Logger.Debug("subnet_Match:" + subnet_Match);
+
+                    if (endpoint.StartsWith(subnet_Match + ".", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
             }
 
-            return endpoint.StartsWith(subnet_Match + ".", StringComparison.OrdinalIgnoreCase);
+            return false;
         }
 
-        private Dictionary<string, string> _subnetLookup = new Dictionary<string, string>(StringComparer.Ordinal);
-        private string GetSubnet(string endpointFirstPart)
+        private Dictionary<string, List<string>> _subnetLookup = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        private List<string> GetSubnets(string endpointFirstPart)
         {
-            string subnet_Match = "";
+            List<string> subnets;
 
             lock (_subnetLookup)
             {
-                if (_subnetLookup.TryGetValue(endpointFirstPart, out subnet_Match))
+                if (_subnetLookup.TryGetValue(endpointFirstPart, out subnets))
                 {
-                    return subnet_Match;
+                    return subnets;
                 }
 
+                subnets = new List<string>();
+
                 foreach (NetworkInterface adapter in NetworkInterface.GetAllNetworkInterfaces())
+                {
                     foreach (UnicastIPAddressInformation unicastIPAddressInformation in adapter.GetIPProperties().UnicastAddresses)
+                    {
                         if (unicastIPAddressInformation.Address.AddressFamily == AddressFamily.InterNetwork && endpointFirstPart == unicastIPAddressInformation.Address.ToString().Split('.')[0])
                         {
                             int subnet_Test = 0;
@@ -160,16 +203,21 @@ namespace Emby.Server.Implementations.Networking
                                 subnet_Test++;
                             }
 
-                            subnet_Match = String.Join(".", unicastIPAddressInformation.Address.ToString().Split('.').Take(subnet_Test).ToArray());
+                            var subnet_Match = String.Join(".", unicastIPAddressInformation.Address.ToString().Split('.').Take(subnet_Test).ToArray());
+
+                            // TODO: Is this check necessary?
+                            if (adapter.OperationalStatus == OperationalStatus.Up)
+                            {
+                                subnets.Add(subnet_Match);
+                            }
                         }
-
-                if (!string.IsNullOrWhiteSpace(subnet_Match))
-                {
-                    _subnetLookup[endpointFirstPart] = subnet_Match;
+                    }
                 }
-            }
 
-            return subnet_Match;
+                _subnetLookup[endpointFirstPart] = subnets;
+
+                return subnets;
+            }
         }
 
         private bool Is172AddressPrivate(string endpoint)
@@ -213,7 +261,7 @@ namespace Emby.Server.Implementations.Networking
                 }
                 else if (address.AddressFamily == AddressFamily.InterNetworkV6)
                 {
-                    lengthMatch = 10;
+                    lengthMatch = 9;
                     if (IsInPrivateAddressSpace(endpoint))
                     {
                         return true;
@@ -313,7 +361,7 @@ namespace Emby.Server.Implementations.Networking
                     return ipProperties.UnicastAddresses
                         //.Where(i => i.IsDnsEligible)
                         .Select(i => i.Address)
-                        .Where(i => i.AddressFamily == AddressFamily.InterNetwork)
+                        .Where(i => i.AddressFamily == AddressFamily.InterNetwork || i.AddressFamily == AddressFamily.InterNetworkV6)
                         .ToList();
                 }
                 catch (Exception ex)
@@ -333,7 +381,7 @@ namespace Emby.Server.Implementations.Networking
             // Reverse them because the last one is usually the correct one
             // It's not fool-proof so ultimately the consumer will have to examine them and decide
             return host.AddressList
-                .Where(i => i.AddressFamily == AddressFamily.InterNetwork)
+                .Where(i => i.AddressFamily == AddressFamily.InterNetwork || i.AddressFamily == AddressFamily.InterNetworkV6)
                 .Reverse();
         }
 

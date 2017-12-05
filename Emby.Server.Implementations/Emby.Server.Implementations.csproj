@@ -117,7 +117,6 @@
     <Compile Include="IO\ManagedFileSystem.cs" />
     <Compile Include="IO\MbLinkShortcutHandler.cs" />
     <Compile Include="IO\MemoryStreamProvider.cs" />
-    <Compile Include="IO\ProgressStream.cs" />
     <Compile Include="IO\SharpCifsFileSystem.cs" />
     <Compile Include="IO\SharpCifs\Config.cs" />
     <Compile Include="IO\SharpCifs\Dcerpc\DcerpcBind.cs" />
@@ -405,11 +404,11 @@
     <Compile Include="LiveTv\TunerHosts\BaseTunerHost.cs" />
     <Compile Include="LiveTv\TunerHosts\HdHomerun\HdHomerunManager.cs" />
     <Compile Include="LiveTv\TunerHosts\HdHomerun\HdHomerunHost.cs" />
-    <Compile Include="LiveTv\TunerHosts\HdHomerun\HdHomerunHttpStream.cs" />
     <Compile Include="LiveTv\TunerHosts\HdHomerun\HdHomerunUdpStream.cs" />
     <Compile Include="LiveTv\TunerHosts\LiveStream.cs" />
     <Compile Include="LiveTv\TunerHosts\M3uParser.cs" />
     <Compile Include="LiveTv\TunerHosts\M3UTunerHost.cs" />
+    <Compile Include="LiveTv\TunerHosts\SharedHttpStream.cs" />
     <Compile Include="Localization\LocalizationManager.cs" />
     <Compile Include="Localization\TextLocalizer.cs" />
     <Compile Include="Logging\ConsoleLogger.cs" />
@@ -651,8 +650,8 @@
     <Reference Include="SharpCompress, Version=0.18.2.0, Culture=neutral, PublicKeyToken=afb0a02973931d96, processorArchitecture=MSIL">
       <HintPath>..\packages\SharpCompress.0.18.2\lib\net45\SharpCompress.dll</HintPath>
     </Reference>
-    <Reference Include="SimpleInjector, Version=4.0.8.0, Culture=neutral, PublicKeyToken=984cb50dea722e99, processorArchitecture=MSIL">
-      <HintPath>..\packages\SimpleInjector.4.0.8\lib\net45\SimpleInjector.dll</HintPath>
+    <Reference Include="SimpleInjector, Version=4.0.12.0, Culture=neutral, PublicKeyToken=984cb50dea722e99, processorArchitecture=MSIL">
+      <HintPath>..\packages\SimpleInjector.4.0.12\lib\net45\SimpleInjector.dll</HintPath>
     </Reference>
     <Reference Include="SQLitePCL.pretty, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\SQLitePCL.pretty.1.1.0\lib\portable-net45+netcore45+wpa81+wp8\SQLitePCL.pretty.dll</HintPath>
@@ -709,6 +708,8 @@
     <EmbeddedResource Include="Localization\Core\zh-CN.json" />
     <EmbeddedResource Include="Localization\Core\zh-HK.json" />
     <EmbeddedResource Include="Localization\Core\en-US.json" />
+    <EmbeddedResource Include="Localization\Core\el.json" />
+    <EmbeddedResource Include="Localization\Core\gsw.json" />
     <None Include="packages.config" />
     <None Include="TextEncoding\NLangDetect\Profiles\afr" />
     <None Include="TextEncoding\NLangDetect\Profiles\ara" />

@@ -26,16 +26,40 @@
 
                 <div class="detailSection" style="margin-bottom: 0;">
 
-                    <h1 class="parentName" style="margin: .25em 0;"></h1>
-                    <h1 class="itemName" style="margin: .5em 0;"></h1>
-
-                    <div class="itemMiscInfo itemMiscInfo-primary" style="margin: 1em 0;">
+                    <div class="nameContainer">
 
                     </div>
 
-                    <div class="itemMiscInfo itemMiscInfo-secondary" style="margin: 1em 0;">
+                    <div class="itemMiscInfo itemMiscInfo-primary" style="margin: .7em 0;font-size:92%;">
 
                     </div>
+
+                    <div class="itemMiscInfo itemMiscInfo-secondary" style="margin: .7em 0;font-size:92%;">
+
+                    </div>
+
+                    <div class="genres hide" style="margin: .7em 0;font-size:92%;">
+
+                    </div>
+
+                    <div class="directors hide" style="margin: .7em 0;font-size:92%;">
+
+                    </div>
+
+                    <form class="trackSelections flex align-items-center flex-wrap-wrap hide focuscontainer-x" style="margin: .5em 0;font-size:92%; padding: 0;">
+                        <div class="selectContainer selectContainer-inline selectSourceContainer hide trackSelectionFieldContainer flex-shrink-zero" style="margin-right:1.5em;">
+                            <select is="emby-select" class="selectSource detailTrackSelect" label=""></select>
+                        </div>
+                        <div class="selectContainer selectContainer-inline selectVideoContainer hide trackSelectionFieldContainer flex-shrink-zero" style="margin-right:1.5em;">
+                            <select is="emby-select" class="selectVideo detailTrackSelect" label=""></select>
+                        </div>
+                        <div class="selectContainer selectContainer-inline selectAudioContainer hide trackSelectionFieldContainer flex-shrink-zero" style="margin-right:1.5em;">
+                            <select is="emby-select" class="selectAudio detailTrackSelect" label=""></select>
+                        </div>
+                        <div class="selectContainer selectContainer-inline selectSubtitlesContainer hide trackSelectionFieldContainer">
+                            <select is="emby-select" class="selectSubtitles detailTrackSelect" label=""></select>
+                        </div>
+                    </form>
 
                     <div class="mainDetailButtons">
 
@@ -131,18 +155,18 @@
                     <div class="detailSectionContent">
 
                         <p class="itemGenres"></p>
-                        <h2 class="tagline"></h2>
-                        <p class="artist"></p>
+                        <h3 class="tagline"></h3>
                         <p class="overview"></p>
-                        <div class="mediaInfoIcons hide">
-                        </div>
                         <p id="itemBirthday"></p>
                         <p id="itemBirthLocation"></p>
                         <p id="itemDeathDate"></p>
                         <p id="seriesAirTime"></p>
-                        <p class="itemExternalLinks"></p>
-                        <p class="itemStudios"></p>
-                        <p class="itemTags"></p>
+                        <div class="itemTags hide" style="margin: .7em 0;font-size:92%;">
+
+                        </div>
+                        <div class="itemExternalLinks hide" style="margin: .7em 0;font-size:92%;">
+
+                        </div>
 
                         <div class="seriesRecordingEditor">
 
@@ -164,6 +188,9 @@
                 ${HeaderNextUp}
             </h2>
             <div is="emby-itemscontainer" class="nextUpItems vertical-wrap padded-left padded-right"></div>
+        </div>
+        <div class="programGuideSection hide verticalSection detailVerticalSection">
+            <div class="programGuide"></div>
         </div>
         <div id="childrenCollapsible" class="hide verticalSection detailVerticalSection">
             <h2 class="childrenSectionHeader sectionTitle sectionTitle-cards padded-left">
@@ -228,7 +255,7 @@
             </h2>
             <div id="musicVideosContent" is="emby-itemscontainer" class="itemsContainer vertical-wrap padded-left padded-right"></div>
         </div>
-        <div id="similarCollapsible" class="verticalSection detailVerticalSection hide">
+        <div id="similarCollapsible" class="verticalSection verticalSection-extrabottompadding detailVerticalSection hide">
             <h2 class="sectionTitle sectionTitle-cards padded-left">
                 ${HeaderMoreLikeThis}
             </h2>
@@ -243,7 +270,7 @@
             </div>
         </div>
 
-        <div id="scenesCollapsible" class="verticalSection detailVerticalSection hide">
+        <div id="scenesCollapsible" class="verticalSection verticalSection-extrabottompadding hide">
             <h2 class="sectionTitle sectionTitle-cards padded-left">
                 ${HeaderScenes}
             </h2>

@@ -16,6 +16,7 @@ using MediaBrowser.Common.Net;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Net;
+using MediaBrowser.Controller.IO;
 
 namespace Emby.Server.Implementations.HttpClientManager
 {
@@ -124,18 +125,6 @@ namespace Emby.Server.Implementations.HttpClientManager
             }
         }
 
-        private void AddIpv4Option(HttpWebRequest request, HttpRequestOptions options)
-        {
-            request.ServicePoint.BindIPEndPointDelegate = (servicePount, remoteEndPoint, retryCount) =>
-            {
-                if (remoteEndPoint.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    return new IPEndPoint(IPAddress.Any, 0);
-                }
-                throw new InvalidOperationException("no IPv4 address");
-            };
-        }
-
         private WebRequest GetRequest(HttpRequestOptions options, string method)
         {
             var url = options.Url;
@@ -153,11 +142,6 @@ namespace Emby.Server.Implementations.HttpClientManager
 
             if (httpWebRequest != null)
             {
-                if (options.PreferIpv4)
-                {
-                    AddIpv4Option(httpWebRequest, options);
-                }
-
                 AddRequestHeaders(httpWebRequest, options);
 
                 if (options.EnableHttpCompression)
@@ -650,12 +634,9 @@ namespace Emby.Server.Implementations.HttpClientManager
                     }
                     else
                     {
-                        using (var stream = ProgressStream.CreateReadProgressStream(httpResponse.GetResponseStream(), options.Progress.Report, contentLength.Value))
+                        using (var fs = _fileSystem.GetFileStream(tempFile, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, true))
                         {
-                            using (var fs = _fileSystem.GetFileStream(tempFile, FileOpenMode.Create, FileAccessMode.Write, FileShareMode.Read, true))
-                            {
-                                await stream.CopyToAsync(fs, StreamDefaults.DefaultCopyToBufferSize, options.CancellationToken).ConfigureAwait(false);
-                            }
+                            await StreamHelper.CopyToAsync(httpResponse.GetResponseStream(), fs, StreamDefaults.DefaultCopyToBufferSize, options.Progress, contentLength.Value, options.CancellationToken).ConfigureAwait(false);
                         }
                     }
 

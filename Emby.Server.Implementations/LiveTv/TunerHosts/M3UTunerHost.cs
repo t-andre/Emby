@@ -17,6 +17,7 @@ using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.MediaEncoding;
 using MediaBrowser.Model.Serialization;
 using MediaBrowser.Model.System;
+using System.IO;
 
 namespace Emby.Server.Implementations.LiveTv.TunerHosts
 {
@@ -75,12 +76,43 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts
             return Task.FromResult(list);
         }
 
+        private string[] _disallowedSharedStreamExtensions = new string[] 
+        {
+            ".mkv",
+            ".mp4",
+            ".m3u8",
+            ".mpd"
+        };
+
         protected override async Task<ILiveStream> GetChannelStream(TunerHostInfo info, string channelId, string streamId, CancellationToken cancellationToken)
         {
+            var tunerCount = info.TunerCount;
+
+            if (tunerCount > 0)
+            {
+                var liveStreams = await EmbyTV.EmbyTV.Current.GetLiveStreams(info, cancellationToken).ConfigureAwait(false);
+
+                if (liveStreams.Count >= info.TunerCount)
+                {
+                    throw new LiveTvConflictException();
+                }
+            }
+
             var sources = await GetChannelStreamMediaSources(info, channelId, cancellationToken).ConfigureAwait(false);
 
-            var liveStream = new LiveStream(sources.First(), _environment, FileSystem, Logger, Config.ApplicationPaths);
-            return liveStream;
+            var mediaSource = sources.First();
+
+            if (mediaSource.Protocol == MediaProtocol.Http && !mediaSource.RequiresLooping)
+            {
+                var extension = Path.GetExtension(mediaSource.Path) ?? string.Empty;
+
+                if (!_disallowedSharedStreamExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+                {
+                    return new SharedHttpStream(mediaSource, info, streamId, FileSystem, _httpClient, Logger, Config.ApplicationPaths, _appHost, _environment);
+                }
+            }
+
+            return new LiveStream(mediaSource, info, _environment, FileSystem, Logger, Config.ApplicationPaths);
         }
 
         public async Task Validate(TunerHostInfo info)
@@ -134,6 +166,8 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts
                 isRemote = !_networkManager.IsInLocalNetwork(uri.Host);
             }
 
+            var supportsDirectPlay = !info.EnableStreamLooping && info.TunerCount == 0;
+
             var mediaSource = new MediaSourceInfo
             {
                 Path = path,
@@ -165,7 +199,8 @@ namespace Emby.Server.Implementations.LiveTv.TunerHosts
                 IsInfiniteStream = true,
                 IsRemote = isRemote,
 
-                IgnoreDts = true
+                IgnoreDts = true,
+                SupportsDirectPlay = supportsDirectPlay
             };
 
             mediaSource.InferTotalBitrate();

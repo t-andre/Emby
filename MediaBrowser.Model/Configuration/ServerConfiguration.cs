@@ -46,7 +46,6 @@ namespace MediaBrowser.Model.Configuration
         /// </summary>
         /// <value><c>true</c> if [use HTTPS]; otherwise, <c>false</c>.</value>
         public bool EnableHttps { get; set; }
-        public bool EnableLocalizedGuids { get; set; }
         public bool EnableNormalizedItemByNameIds { get; set; }
 
         /// <summary>
@@ -61,6 +60,8 @@ namespace MediaBrowser.Model.Configuration
         /// </summary>
         /// <value><c>true</c> if this instance is port authorized; otherwise, <c>false</c>.</value>
         public bool IsPortAuthorized { get; set; }
+
+        public bool AutoRunWebApp { get; set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether [enable case sensitive item ids].
@@ -198,7 +199,6 @@ namespace MediaBrowser.Model.Configuration
             LocalNetworkAddresses = new string[] { };
             CodecsUsed = new string[] { };
             ImageExtractionTimeoutMs = 0;
-            EnableLocalizedGuids = true;
             PathSubstitutions = new PathSubstitution[] { };
             EnableSimpleArtistDetection = true;
 

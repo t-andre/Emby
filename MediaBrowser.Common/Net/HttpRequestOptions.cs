@@ -93,6 +93,8 @@ namespace MediaBrowser.Common.Net
         public bool LogRequest { get; set; }
         public bool LogRequestAsDebug { get; set; }
         public bool LogErrors { get; set; }
+        public bool LogResponse { get; set; }
+        public bool LogResponseHeaders { get; set; }
 
         public bool LogErrorResponseBody { get; set; }
         public bool EnableKeepAlive { get; set; }
@@ -101,7 +103,6 @@ namespace MediaBrowser.Common.Net
         public TimeSpan CacheLength { get; set; }
 
         public int TimeoutMs { get; set; }
-        public bool PreferIpv4 { get; set; }
         public bool EnableDefaultUserAgent { get; set; }
 
         public bool AppendCharsetToMimeType { get; set; }

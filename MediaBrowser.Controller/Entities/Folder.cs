@@ -416,7 +416,7 @@ namespace MediaBrowser.Controller.Entities
                 {
                     BaseItem currentChild;
 
-                    if (currentChildren.TryGetValue(child.Id, out currentChild) && currentChild.IsValidFromResolver(child))
+                    if (currentChildren.TryGetValue(child.Id, out currentChild))
                     {
                         validChildren.Add(currentChild);
 
@@ -466,11 +466,11 @@ namespace MediaBrowser.Controller.Entities
 
                             item.SetParent(null);
                             await LibraryManager.DeleteItem(item, new DeleteOptions { DeleteFileLocation = false }).ConfigureAwait(false);
-                            LibraryManager.ReportItemRemoved(item);
+                            LibraryManager.ReportItemRemoved(item, this);
                         }
                     }
 
-                    LibraryManager.CreateItems(newItems, cancellationToken);
+                    LibraryManager.CreateItems(newItems, this, cancellationToken);
                 }
             }
             else
@@ -1266,7 +1266,7 @@ namespace MediaBrowser.Controller.Entities
 
                 var childOwner = child.IsOwnedItem ? (child.GetOwner() ?? child) : child;
 
-                if (childOwner != null)
+                if (childOwner != null && !(child is IItemByName))
                 {
                     var childLocationType = childOwner.LocationType;
                     if (childLocationType == LocationType.Remote || childLocationType == LocationType.Virtual)
@@ -1421,6 +1421,16 @@ namespace MediaBrowser.Controller.Entities
             // Sweep through recursively and update status
             foreach (var item in itemsResult)
             {
+                if (item.IsVirtualItem)
+                {
+                    // The querying doesn't support virtual unaired
+                    var episode = item as Episode;
+                    if (episode != null && episode.IsUnaired)
+                    {
+                        continue;
+                    }
+                }
+
                 item.MarkPlayed(user, datePlayed, resetPosition);
             }
         }

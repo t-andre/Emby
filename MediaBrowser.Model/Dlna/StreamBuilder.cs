@@ -965,15 +965,6 @@ namespace MediaBrowser.Model.Dlna
                 return new Tuple<PlayMethod?, List<TranscodeReason>>(PlayMethod.DirectStream, new List<TranscodeReason>());
             }
 
-            if (videoStream == null)
-            {
-                _logger.Info("Profile: {0}, Cannot direct stream with no known video stream. Path: {1}",
-                    profile.Name ?? "Unknown Profile",
-                    mediaSource.Path ?? "Unknown path");
-
-                return new Tuple<PlayMethod?, List<TranscodeReason>>(null, new List<TranscodeReason> { TranscodeReason.UnknownVideoStreamInfo });
-            }
-
             // See if it can be direct played
             DirectPlayProfile directPlay = null;
             foreach (DirectPlayProfile i in profile.DirectPlayProfiles)
@@ -1098,15 +1089,6 @@ namespace MediaBrowser.Model.Dlna
             if (audioStream != null)
             {
                 string audioCodec = audioStream.Codec;
-
-                if (string.IsNullOrEmpty(audioCodec))
-                {
-                    _logger.Info("Profile: {0}, DirectPlay=false. Reason=Unknown audio codec. Path: {1}",
-                        profile.Name ?? "Unknown Profile",
-                        mediaSource.Path ?? "Unknown path");
-
-                    return new Tuple<PlayMethod?, List<TranscodeReason>>(null, new List<TranscodeReason> { TranscodeReason.UnknownAudioStreamInfo });
-                }
 
                 conditions = new List<ProfileCondition>();
                 bool? isSecondaryAudio = audioStream == null ? null : mediaSource.IsSecondaryAudio(audioStream);
@@ -1353,21 +1335,15 @@ namespace MediaBrowser.Model.Dlna
                 return true;
             }
 
-            if (!maxBitrate.HasValue)
-            {
-                _logger.Info("Cannot " + playMethod + " due to unknown supported bitrate");
-                return false;
-            }
+            var requestedMaxBitrate = maxBitrate ?? 1000000;
 
-            if (!item.Bitrate.HasValue)
-            {
-                _logger.Info("Cannot " + playMethod + " due to unknown content bitrate");
-                return false;
-            }
+            // If we don't know the bitrate, then force a transcode if requested max bitrate is under 40 mbps
+            var itemBitrate = item.Bitrate ?? 
+                40000000;
 
-            if (item.Bitrate.Value > maxBitrate.Value)
+            if (itemBitrate > requestedMaxBitrate)
             {
-                _logger.Info("Bitrate exceeds " + playMethod + " limit: media bitrate: {0}, max bitrate: {1}", item.Bitrate.Value.ToString(CultureInfo.InvariantCulture), maxBitrate.Value.ToString(CultureInfo.InvariantCulture));
+                _logger.Info("Bitrate exceeds " + playMethod + " limit: media bitrate: {0}, max bitrate: {1}", itemBitrate.ToString(CultureInfo.InvariantCulture), requestedMaxBitrate.ToString(CultureInfo.InvariantCulture));
                 return false;
             }
 

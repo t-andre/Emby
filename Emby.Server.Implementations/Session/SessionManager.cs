@@ -972,7 +972,6 @@ namespace Emby.Server.Implementations.Session
             if (command.PlayCommand == PlayCommand.PlayInstantMix)
             {
                 items = command.ItemIds.SelectMany(i => TranslateItemForInstantMix(i, user))
-                    .Where(i => i.LocationType != LocationType.Virtual)
                     .ToList();
 
                 command.PlayCommand = PlayCommand.PlayNow;
@@ -986,9 +985,7 @@ namespace Emby.Server.Implementations.Session
                     list.AddRange(subItems);
                 }
 
-                items = list
-                   .Where(i => i.LocationType != LocationType.Virtual)
-                   .ToList();
+                items = list;
             }
 
             if (command.PlayCommand == PlayCommand.PlayShuffle)
@@ -1074,7 +1071,8 @@ namespace Emby.Server.Implementations.Session
                         {
                             ItemFields.SortName
                         }
-                    }
+                    },
+                    IsVirtualItem = false
                 });
 
                 return FilterToSingleMediaType(items)
@@ -1097,7 +1095,8 @@ namespace Emby.Server.Implementations.Session
                         {
                             ItemFields.SortName
                         }
-                    }
+                    },
+                    IsVirtualItem = false
 
                 });
 
@@ -1183,13 +1182,11 @@ namespace Emby.Server.Implementations.Session
         {
             var sessions = Sessions.Where(i => i.IsActive && i.SessionController != null).ToList();
 
-            var info = await _appHost.GetSystemInfo().ConfigureAwait(false);
-
             var tasks = sessions.Select(session => Task.Run(async () =>
             {
                 try
                 {
-                    await session.SessionController.SendRestartRequiredNotification(info, cancellationToken).ConfigureAwait(false);
+                    await session.SessionController.SendRestartRequiredNotification(cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -1424,7 +1421,7 @@ namespace Emby.Server.Implementations.Session
 
             if (enforcePassword)
             {
-                var result = await _userManager.AuthenticateUser(request.Username, request.Password, request.PasswordSha1, request.PasswordMd5, request.RemoteEndPoint).ConfigureAwait(false);
+                var result = await _userManager.AuthenticateUser(request.Username, request.Password, request.PasswordSha1, request.PasswordMd5, request.RemoteEndPoint, true).ConfigureAwait(false);
 
                 if (result == null)
                 {

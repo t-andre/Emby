@@ -75,49 +75,54 @@ namespace MediaBrowser.Providers.MediaInfo
 
             try
             {
-                string[] streamFileNames = null;
+                Model.MediaInfo.MediaInfo mediaInfoResult = null;
 
-                if (item.VideoType == VideoType.Iso)
+                if (!item.IsShortcut)
                 {
-                    item.IsoType = DetermineIsoType(isoMount);
-                }
+                    string[] streamFileNames = null;
 
-                if (item.VideoType == VideoType.Dvd || (item.IsoType.HasValue && item.IsoType == IsoType.Dvd))
-                {
-                    streamFileNames = FetchFromDvdLib(item, isoMount);
-
-                    if (streamFileNames.Length == 0)
+                    if (item.VideoType == VideoType.Iso)
                     {
-                        _logger.Error("No playable vobs found in dvd structure, skipping ffprobe.");
-                        return ItemUpdateType.MetadataImport;
+                        item.IsoType = DetermineIsoType(isoMount);
                     }
-                }
 
-                else if (item.VideoType == VideoType.BluRay || (item.IsoType.HasValue && item.IsoType == IsoType.BluRay))
-                {
-                    var inputPath = isoMount != null ? isoMount.MountedPath : item.Path;
-
-                    blurayDiscInfo = GetBDInfo(inputPath);
-
-                    streamFileNames = blurayDiscInfo.Files;
-
-                    if (streamFileNames.Length == 0)
+                    if (item.VideoType == VideoType.Dvd || (item.IsoType.HasValue && item.IsoType == IsoType.Dvd))
                     {
-                        _logger.Error("No playable vobs found in bluray structure, skipping ffprobe.");
-                        return ItemUpdateType.MetadataImport;
+                        streamFileNames = FetchFromDvdLib(item, isoMount);
+
+                        if (streamFileNames.Length == 0)
+                        {
+                            _logger.Error("No playable vobs found in dvd structure, skipping ffprobe.");
+                            return ItemUpdateType.MetadataImport;
+                        }
                     }
+
+                    else if (item.VideoType == VideoType.BluRay || (item.IsoType.HasValue && item.IsoType == IsoType.BluRay))
+                    {
+                        var inputPath = isoMount != null ? isoMount.MountedPath : item.Path;
+
+                        blurayDiscInfo = GetBDInfo(inputPath);
+
+                        streamFileNames = blurayDiscInfo.Files;
+
+                        if (streamFileNames.Length == 0)
+                        {
+                            _logger.Error("No playable vobs found in bluray structure, skipping ffprobe.");
+                            return ItemUpdateType.MetadataImport;
+                        }
+                    }
+
+                    if (streamFileNames == null)
+                    {
+                        streamFileNames = new string[] { };
+                    }
+
+                    mediaInfoResult = await GetMediaInfo(item, isoMount, streamFileNames, cancellationToken).ConfigureAwait(false);
+
+                    cancellationToken.ThrowIfCancellationRequested();
                 }
 
-                if (streamFileNames == null)
-                {
-                    streamFileNames = new string[] { };
-                }
-
-                var result = await GetMediaInfo(item, isoMount, streamFileNames, cancellationToken).ConfigureAwait(false);
-
-                cancellationToken.ThrowIfCancellationRequested();
-
-                await Fetch(item, cancellationToken, result, isoMount, blurayDiscInfo, options).ConfigureAwait(false);
+                await Fetch(item, cancellationToken, mediaInfoResult, isoMount, blurayDiscInfo, options).ConfigureAwait(false);
 
             }
             finally
@@ -162,43 +167,60 @@ namespace MediaBrowser.Providers.MediaInfo
             BlurayDiscInfo blurayInfo,
             MetadataRefreshOptions options)
         {
-            var mediaStreams = mediaInfo.MediaStreams;
+            List<MediaStream> mediaStreams;
+            List<ChapterInfo> chapters;
 
-            video.TotalBitrate = mediaInfo.Bitrate;
-            //video.FormatName = (mediaInfo.Container ?? string.Empty)
-            //    .Replace("matroska", "mkv", StringComparison.OrdinalIgnoreCase);
-
-            // For dvd's this may not always be accurate, so don't set the runtime if the item already has one
-            var needToSetRuntime = video.VideoType != VideoType.Dvd || video.RunTimeTicks == null || video.RunTimeTicks.Value == 0;
-
-            if (needToSetRuntime)
+            if (mediaInfo != null)
             {
-                video.RunTimeTicks = mediaInfo.RunTimeTicks;
-            }
+                mediaStreams = mediaInfo.MediaStreams;
 
-            if (video.VideoType == VideoType.VideoFile)
-            {
-                var extension = (Path.GetExtension(video.Path) ?? string.Empty).TrimStart('.');
+                video.TotalBitrate = mediaInfo.Bitrate;
+                //video.FormatName = (mediaInfo.Container ?? string.Empty)
+                //    .Replace("matroska", "mkv", StringComparison.OrdinalIgnoreCase);
 
-                video.Container = extension;
+                // For dvd's this may not always be accurate, so don't set the runtime if the item already has one
+                var needToSetRuntime = video.VideoType != VideoType.Dvd || video.RunTimeTicks == null || video.RunTimeTicks.Value == 0;
+
+                if (needToSetRuntime)
+                {
+                    video.RunTimeTicks = mediaInfo.RunTimeTicks;
+                }
+
+                if (video.VideoType == VideoType.VideoFile)
+                {
+                    var extension = (Path.GetExtension(video.Path) ?? string.Empty).TrimStart('.');
+
+                    video.Container = extension;
+                }
+                else
+                {
+                    video.Container = null;
+                }
+                video.Container = mediaInfo.Container;
+
+                chapters = mediaInfo.Chapters == null ? new List<ChapterInfo>() : mediaInfo.Chapters.ToList();
+                if (blurayInfo != null)
+                {
+                    FetchBdInfo(video, chapters, mediaStreams, blurayInfo);
+                }
             }
             else
             {
-                video.Container = null;
-            }
-            video.Container = mediaInfo.Container;
-
-            var chapters = mediaInfo.Chapters == null ? new List<ChapterInfo>() : mediaInfo.Chapters.ToList();
-            if (blurayInfo != null)
-            {
-                FetchBdInfo(video, chapters, mediaStreams, blurayInfo);
+                mediaStreams = new List<MediaStream>();
+                chapters = new List<ChapterInfo>();
             }
 
             await AddExternalSubtitles(video, mediaStreams, options, cancellationToken).ConfigureAwait(false);
+
             var libraryOptions = _libraryManager.GetLibraryOptions(video);
 
-            FetchEmbeddedInfo(video, mediaInfo, options, libraryOptions);
-            FetchPeople(video, mediaInfo, options);
+            if (mediaInfo != null)
+            {
+                FetchEmbeddedInfo(video, mediaInfo, options, libraryOptions);
+                FetchPeople(video, mediaInfo, options);
+                video.Timestamp = mediaInfo.Timestamp;
+                video.Video3DFormat = video.Video3DFormat ?? mediaInfo.Video3DFormat;
+            }
 
             video.IsHD = mediaStreams.Any(i => i.Type == MediaStreamType.Video && i.Width.HasValue && i.Width.Value >= 1260);
 
@@ -207,9 +229,6 @@ namespace MediaBrowser.Providers.MediaInfo
             video.DefaultVideoStreamIndex = videoStream == null ? (int?)null : videoStream.Index;
 
             video.HasSubtitles = mediaStreams.Any(i => i.Type == MediaStreamType.Subtitle);
-            video.Timestamp = mediaInfo.Timestamp;
-
-            video.Video3DFormat = video.Video3DFormat ?? mediaInfo.Video3DFormat;
 
             _itemRepo.SaveMediaStreams(video.Id, mediaStreams, cancellationToken);
 
@@ -229,7 +248,7 @@ namespace MediaBrowser.Providers.MediaInfo
                     extractDuringScan = libraryOptions.ExtractChapterImagesDuringLibraryScan;
                 }
 
-                await _encodingManager.RefreshChapterImages(video, chapters, extractDuringScan, false, cancellationToken).ConfigureAwait(false);
+                await _encodingManager.RefreshChapterImages(video, options.DirectoryService, chapters, extractDuringScan, false, cancellationToken).ConfigureAwait(false);
 
                 _chapterManager.SaveChapters(video.Id.ToString(), chapters);
             }
@@ -472,7 +491,7 @@ namespace MediaBrowser.Providers.MediaInfo
             var subtitleResolver = new SubtitleResolver(_localization, _fileSystem);
 
             var startIndex = currentStreams.Count == 0 ? 0 : (currentStreams.Select(i => i.Index).Max() + 1);
-            var externalSubtitleStreams = subtitleResolver.GetExternalSubtitleStreams(video, startIndex, options.DirectoryService, false).ToList();
+            var externalSubtitleStreams = subtitleResolver.GetExternalSubtitleStreams(video, startIndex, options.DirectoryService, false);
 
             var enableSubtitleDownloading = options.MetadataRefreshMode == MetadataRefreshMode.Default ||
                                             options.MetadataRefreshMode == MetadataRefreshMode.FullRefresh;
@@ -497,7 +516,7 @@ namespace MediaBrowser.Providers.MediaInfo
                 // Rescan
                 if (downloadedLanguages.Count > 0)
                 {
-                    externalSubtitleStreams = subtitleResolver.GetExternalSubtitleStreams(video, startIndex, options.DirectoryService, true).ToList();
+                    externalSubtitleStreams = subtitleResolver.GetExternalSubtitleStreams(video, startIndex, options.DirectoryService, true);
                 }
             }
 

@@ -125,7 +125,7 @@ namespace Emby.Server.Implementations.LiveTv
         public void AddParts(IEnumerable<ILiveTvService> services, IEnumerable<ITunerHost> tunerHosts, IEnumerable<IListingsProvider> listingProviders)
         {
             _services = services.ToArray();
-            _tunerHosts.AddRange(tunerHosts);
+            _tunerHosts.AddRange(tunerHosts.Where(i => i.IsSupported));
             _listingProviders.AddRange(listingProviders);
 
             foreach (var service in _services)
@@ -947,6 +947,7 @@ namespace Emby.Server.Implementations.LiveTv
                 IsKids = query.IsKids,
                 IsNews = query.IsNews,
                 Genres = query.Genres,
+                GenreIds = query.GenreIds,
                 StartIndex = query.StartIndex,
                 Limit = query.Limit,
                 OrderBy = query.OrderBy,
@@ -1020,7 +1021,8 @@ namespace Emby.Server.Implementations.LiveTv
                 EnableTotalRecordCount = query.EnableTotalRecordCount,
                 OrderBy = new[] { new Tuple<string, SortOrder>(ItemSortBy.StartDate, SortOrder.Ascending) },
                 TopParentIds = new[] { topFolder.Id.ToString("N") },
-                DtoOptions = options
+                DtoOptions = options,
+                GenreIds = query.GenreIds
             };
 
             if (query.Limit.HasValue)
@@ -1232,6 +1234,8 @@ namespace Emby.Server.Implementations.LiveTv
             var newChannelIdList = new List<Guid>();
             var newProgramIdList = new List<Guid>();
 
+            var cleanDatabase = true;
+
             foreach (var service in _services)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -1254,6 +1258,7 @@ namespace Emby.Server.Implementations.LiveTv
                 }
                 catch (Exception ex)
                 {
+                    cleanDatabase = false;
                     _logger.ErrorException("Error refreshing channels for service", ex);
                 }
 
@@ -1264,8 +1269,11 @@ namespace Emby.Server.Implementations.LiveTv
                 progress.Report(100 * percent);
             }
 
-            await CleanDatabaseInternal(newChannelIdList.ToArray(), new[] { typeof(LiveTvChannel).Name }, progress, cancellationToken).ConfigureAwait(false);
-            await CleanDatabaseInternal(newProgramIdList.ToArray(), new[] { typeof(LiveTvProgram).Name }, progress, cancellationToken).ConfigureAwait(false);
+            if (cleanDatabase)
+            {
+                await CleanDatabaseInternal(newChannelIdList.ToArray(), new[] { typeof(LiveTvChannel).Name }, progress, cancellationToken).ConfigureAwait(false);
+                await CleanDatabaseInternal(newProgramIdList.ToArray(), new[] { typeof(LiveTvProgram).Name }, progress, cancellationToken).ConfigureAwait(false);
+            }
 
             var coreService = _services.OfType<EmbyTV.EmbyTV>().FirstOrDefault();
 
@@ -1291,8 +1299,9 @@ namespace Emby.Server.Implementations.LiveTv
         {
             progress.Report(10);
 
-            var allChannels = await GetChannels(service, cancellationToken).ConfigureAwait(false);
-            var allChannelsList = allChannels.ToList();
+            var allChannelsList = (await service.GetChannelsAsync(cancellationToken).ConfigureAwait(false))
+                .Select(i => new Tuple<string, ChannelInfo>(service.Name, i))
+                .ToList();
 
             var list = new List<LiveTvChannel>();
 
@@ -1414,7 +1423,7 @@ namespace Emby.Server.Implementations.LiveTv
 
                     if (newPrograms.Count > 0)
                     {
-                        _libraryManager.CreateItems(newPrograms, cancellationToken);
+                        _libraryManager.CreateItems(newPrograms, null, cancellationToken);
                     }
 
                     // TODO: Do this in bulk
@@ -1505,13 +1514,6 @@ namespace Emby.Server.Implementations.LiveTv
             }
 
             return 7;
-        }
-
-        private async Task<IEnumerable<Tuple<string, ChannelInfo>>> GetChannels(ILiveTvService service, CancellationToken cancellationToken)
-        {
-            var channels = await service.GetChannelsAsync(cancellationToken).ConfigureAwait(false);
-
-            return channels.Select(i => new Tuple<string, ChannelInfo>(service.Name, i));
         }
 
         private DateTime _lastRecordingRefreshTime;

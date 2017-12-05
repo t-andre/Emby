@@ -126,10 +126,6 @@ namespace Emby.Server.Implementations.Library.Resolvers.Movies
                 {
                     leftOver.Add(child);
                 }
-                else if (IsIgnored(child.Name))
-                {
-
-                }
                 else
                 {
                     files.Add(child);
@@ -160,7 +156,7 @@ namespace Emby.Server.Implementations.Library.Resolvers.Movies
                     ProductionYear = video.Year,
                     Name = parseName ?
                         video.Name :
-                        Path.GetFileName(video.Files[0].Path),
+                        Path.GetFileNameWithoutExtension(video.Files[0].Path),
                     AdditionalParts = video.Files.Skip(1).Select(i => i.Path).ToArray(),
                     LocalAlternateVersions = video.AlternateVersions.Select(i => i.Path).ToArray()
                 };
@@ -202,14 +198,14 @@ namespace Emby.Server.Implementations.Library.Resolvers.Movies
         {
             var collectionType = args.GetCollectionType();
 
-            if (IsInvalid(args.Parent, collectionType))
-            {
-                return null;
-            }
-
             // Find movies with their own folders
             if (args.IsDirectory)
             {
+                if (IsInvalid(args.Parent, collectionType))
+                {
+                    return null;
+                }
+
                 var files = args.FileSystemChildren
                     .Where(i => !LibraryManager.IgnoreFile(i, args.Parent))
                     .ToList();
@@ -251,8 +247,13 @@ namespace Emby.Server.Implementations.Library.Resolvers.Movies
                 return null;
             }
 
-            // Owned items will be caught by the plain video resolver
+            // Handle owned items
             if (args.Parent == null)
+            {
+                return base.Resolve(args);
+            }
+
+            if (IsInvalid(args.Parent, collectionType))
             {
                 return null;
             }
@@ -291,22 +292,6 @@ namespace Emby.Server.Implementations.Library.Resolvers.Movies
             }
 
             return item;
-        }
-
-        private bool IsIgnored(string filename)
-        {
-            // Ignore samples
-            var sampleFilename = " " + filename.Replace(".", " ", StringComparison.OrdinalIgnoreCase)
-                .Replace("-", " ", StringComparison.OrdinalIgnoreCase)
-                .Replace("_", " ", StringComparison.OrdinalIgnoreCase)
-                .Replace("!", " ", StringComparison.OrdinalIgnoreCase);
-
-            if (sampleFilename.IndexOf(" sample ", StringComparison.OrdinalIgnoreCase) != -1)
-            {
-                return true;
-            }
-
-            return false;
         }
 
         /// <summary>
@@ -528,6 +513,15 @@ namespace Emby.Server.Implementations.Library.Resolvers.Movies
             return returnVideo;
         }
 
+        private string[] ValidCollectionTypes = new[]
+        {
+                CollectionType.Movies,
+                CollectionType.HomeVideos,
+                CollectionType.MusicVideos,
+                CollectionType.Movies,
+                CollectionType.Photos
+            };
+
         private bool IsInvalid(Folder parent, string collectionType)
         {
             if (parent != null)
@@ -538,21 +532,12 @@ namespace Emby.Server.Implementations.Library.Resolvers.Movies
                 }
             }
 
-            var validCollectionTypes = new[]
-            {
-                CollectionType.Movies,
-                CollectionType.HomeVideos,
-                CollectionType.MusicVideos,
-                CollectionType.Movies,
-                CollectionType.Photos
-            };
-
             if (string.IsNullOrWhiteSpace(collectionType))
             {
                 return false;
             }
 
-            return !validCollectionTypes.Contains(collectionType, StringComparer.OrdinalIgnoreCase);
+            return !ValidCollectionTypes.Contains(collectionType, StringComparer.OrdinalIgnoreCase);
         }
 
         private IImageProcessor _imageProcessor;
